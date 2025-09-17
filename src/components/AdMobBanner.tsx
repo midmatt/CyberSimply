@@ -18,14 +18,14 @@ interface AdMobBannerProps {
   position?: 'top' | 'bottom' | 'inline';
   size?: 'banner' | 'large' | 'medium' | 'small';
   onAdPress?: () => void;
-  canShowCloseButton?: boolean;
+  showCloseButton?: boolean;
 }
 
 export function AdMobBannerComponent({
   position = 'inline',
   size = 'banner',
   onAdPress,
-  canShowCloseButton = false
+  showCloseButton = false
 }: AdMobBannerProps) {
   const { colors } = useTheme();
   const { isAdFree } = useAdFree();
@@ -34,7 +34,7 @@ export function AdMobBannerComponent({
   const [error, setError] = useState<string | null>(null);
 
   // Only show close button for premium users
-  const canShowCloseButton = canShowCloseButton && isAdFree;
+  const canShowCloseButton = showCloseButton && isAdFree;
 
   const styles = StyleSheet.create({
     container: {

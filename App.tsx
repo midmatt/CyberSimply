@@ -4,7 +4,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import RNBootSplash from 'react-native-bootsplash';
 import * as Font from 'expo-font';
-import * as Asset from 'expo-asset';
+import { Asset } from 'expo-asset';
 
 // Context providers
 import { AppProvider } from './src/context/AppContext';

@@ -3,7 +3,7 @@
 
 import Constants from 'expo-constants';
 
-const IS_TESTFLIGHT = Constants.appOwnership === 'standalone' && !__DEV__;
+const IS_TESTFLIGHT = (Constants.appOwnership as string) === 'standalone' && !__DEV__;
 const USE_TEST_ADS = __DEV__ || IS_TESTFLIGHT;
 
 export interface AdConfig {
