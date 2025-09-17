@@ -1,0 +1,5 @@
+{
+  "name": "fetchArticles",
+  "schedule": "*/15 * * * *",
+  "description": "Fetch and process cybersecurity articles every 15 minutes"
+}
