@@ -1,0 +1,42 @@
+name: Fetch Fresh Articles
+
+on:
+  schedule:
+    # Run every 6 hours (4 times per day)
+    - cron: '0 */6 * * *'
+  # Also allow manual triggering
+  workflow_dispatch:
+
+jobs:
+  fetch-articles:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: |
+        cd CyberSimply
+        npm install
+        
+    - name: Fetch and store articles
+      run: |
+        cd CyberSimply
+        node fetch-more-articles.js
+      env:
+        NODE_ENV: production
+        
+    - name: Notify on success
+      if: success()
+      run: echo "✅ Successfully fetched fresh articles at $(date)"
+      
+    - name: Notify on failure
+      if: failure()
+      run: echo "❌ Failed to fetch articles at $(date)"
