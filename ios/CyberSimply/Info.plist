@@ -57,6 +57,11 @@
     <string>Allow $(PRODUCT_NAME) to access your microphone</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>Allow $(PRODUCT_NAME) to access your photos</string>
+    <key>BGTaskSchedulerPermittedIdentifiers</key>
+    <array>
+      <string>com.cybersimply.refresh</string>
+      <string>com.cybersimply.cleanup</string>
+    </array>
     <key>UIBackgroundModes</key>
     <array>
       <string>fetch</string>
