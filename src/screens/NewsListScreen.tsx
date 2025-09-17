@@ -53,14 +53,7 @@ export function NewsListScreen() {
   const { authState } = useSupabase();
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
-
-  // Ensure theme is loaded before rendering
-  useEffect(() => {
-    if (colors && colors.background) {
-      setIsInitialized(true);
-    }
-  }, [colors]);
+  // Theme is already loaded in App.tsx, no need for additional loading screen
 
   // Search functionality is now handled directly by setSearchQuery
 
@@ -341,15 +334,7 @@ export function NewsListScreen() {
 
   const keyExtractor = useCallback((item: ProcessedArticle) => item.id, []);
 
-  // Show loading screen while theme initializes
-  if (!isInitialized) {
-    return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#ffffff', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={{ marginTop: 16, fontSize: 16, color: '#333333' }}>Loading...</Text>
-      </SafeAreaView>
-    );
-  }
+  // No loading screen needed - theme is already loaded in App.tsx
 
   return (
     <SafeAreaView style={styles.container}>

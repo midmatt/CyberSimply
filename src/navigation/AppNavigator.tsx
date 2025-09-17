@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -20,6 +20,7 @@ import { ArticleDetail } from '../components/ArticleDetail';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useTheme } from '../context/ThemeContext';
 import { useSupabase } from '../context/SupabaseContext';
+import { launchFlagsService } from '../services/launchFlagsService';
 import { RootStackParamList } from '../types';
 
 const Tab = createBottomTabNavigator();
@@ -150,6 +151,25 @@ function MainTabNavigator() {
 export default function AppNavigator() {
   console.log("🚀 AppNavigator: Starting initialization...");
   
+  const [shouldShowLogin, setShouldShowLogin] = useState<boolean | null>(null);
+  
+  useEffect(() => {
+    const checkLoginStatus = async () => {
+      try {
+        const flags = launchFlagsService.getFlags();
+        const shouldShow = launchFlagsService.shouldShowLogin();
+        console.log('🏁 Launch flags:', flags);
+        console.log('🔐 Should show login:', shouldShow);
+        setShouldShowLogin(shouldShow);
+      } catch (error) {
+        console.error('❌ Error checking login status:', error);
+        setShouldShowLogin(true); // Default to showing login on error
+      }
+    };
+    
+    checkLoginStatus();
+  }, []);
+  
   try {
     // Safely get Supabase context
     const supabaseContext = useSafeSupabase();
@@ -183,6 +203,29 @@ export default function AppNavigator() {
     const authState = getSafeAuthState(rawAuthState);
     
     console.log("🔐 AuthState:", authState);
+
+    // Show loading screen while determining login status
+    if (shouldShowLogin === null) {
+      console.log("⏳ Determining login status, showing loading screen");
+      return (
+        <NavigationContainer
+          onReady={() => {
+            console.log('Loading NavigationContainer mounted ✅');
+          }}
+        >
+          <Stack.Navigator screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="Loading">
+              {() => (
+                <SafeAreaView style={{ flex: 1, backgroundColor: '#ffffff', justifyContent: 'center', alignItems: 'center' }}>
+                  <ActivityIndicator size="large" color="#007AFF" />
+                  <Text style={{ marginTop: 16, fontSize: 16, color: '#333333' }}>Loading...</Text>
+                </SafeAreaView>
+              )}
+            </Stack.Screen>
+          </Stack.Navigator>
+        </NavigationContainer>
+      );
+    }
 
     // Show loading screen while authentication state is being determined
     if (authState.isLoading) {
@@ -267,7 +310,7 @@ export default function AppNavigator() {
             headerShown: false,
           }}
         >
-          {!authState.isAuthenticated && !authState.isGuest ? (
+          {shouldShowLogin ? (
             <Stack.Screen name="Auth" component={AuthScreen} />
           ) : (
             <>

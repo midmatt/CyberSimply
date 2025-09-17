@@ -1,6 +1,11 @@
 // Ad Service for Google AdMob integration
 // This service manages ad loading, display, and tracking
 
+import Constants from 'expo-constants';
+
+const IS_TESTFLIGHT = Constants.appOwnership === 'standalone' && !__DEV__;
+const USE_TEST_ADS = __DEV__ || IS_TESTFLIGHT;
+
 export interface AdConfig {
   bannerAdUnitId: string;
   interstitialAdUnitId: string;
@@ -24,12 +29,18 @@ export class AdService {
   private isInitialized: boolean = false;
 
   private constructor() {
-    // Use Google test IDs for now
+    // Use test ads in dev and TestFlight, production ads in App Store
     this.config = {
-      bannerAdUnitId: 'ca-app-pub-3940256099942544/6300978111', // Google test banner ID
-      interstitialAdUnitId: 'ca-app-pub-3940256099942544/1033173712', // Google test interstitial ID
-      rewardedAdUnitId: 'ca-app-pub-3940256099942544/5224354917', // Google test rewarded ID
-      testMode: true, // Always use test mode for now
+      bannerAdUnitId: USE_TEST_ADS 
+        ? 'ca-app-pub-3940256099942544/6300978111' // Google test banner ID
+        : 'YOUR_PROD_BANNER_ID', // Replace with your production banner ID
+      interstitialAdUnitId: USE_TEST_ADS
+        ? 'ca-app-pub-3940256099942544/1033173712' // Google test interstitial ID
+        : 'YOUR_PROD_INTERSTITIAL_ID', // Replace with your production interstitial ID
+      rewardedAdUnitId: USE_TEST_ADS
+        ? 'ca-app-pub-3940256099942544/5224354917' // Google test rewarded ID
+        : 'YOUR_PROD_REWARDED_ID', // Replace with your production rewarded ID
+      testMode: USE_TEST_ADS,
     };
   }
 

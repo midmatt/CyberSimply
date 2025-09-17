@@ -72,7 +72,7 @@ export function AdFreeScreen() {
 
     Alert.alert(
       'Go Ad-Free',
-      'Remove all ads forever and support the development of CyberSafe News for just $9.99.',
+      'Remove all ads forever and support the development of CyberSimply for just $9.99.',
       [
         { text: 'Cancel', style: 'cancel' },
         { 
@@ -91,7 +91,7 @@ export function AdFreeScreen() {
       if (result.success) {
         Alert.alert(
           'Success!',
-          'Thank you for your purchase! You now have ad-free access to CyberSafe News.',
+          'Thank you for your purchase! You now have ad-free access to CyberSimply.',
           [{ text: 'OK', onPress: () => setIsAdFree(true) }]
         );
       } else {

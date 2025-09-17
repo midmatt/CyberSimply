@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useSupabase } from '../context/SupabaseContext';
+import { launchFlagsService } from '../services/launchFlagsService';
 import { TYPOGRAPHY, SPACING } from '../constants';
 
 type AuthMode = 'signin' | 'signup' | 'forgot';
@@ -28,6 +29,7 @@ export function AuthScreen() {
   const [displayName, setDisplayName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [staySignedIn, setStaySignedIn] = useState(false);
 
   const handleSignIn = async () => {
     if (!email || !password) {
@@ -40,6 +42,9 @@ export function AuthScreen() {
     setIsLoading(false);
 
     if (result.success) {
+      // Mark that user has seen login and set stay signed in preference
+      await launchFlagsService.markSeenLoginOnce();
+      await launchFlagsService.setStaySignedIn(staySignedIn);
       Alert.alert('Success', 'Signed in successfully!');
     } else {
       Alert.alert('Error', result.error || 'Sign in failed');
@@ -67,6 +72,9 @@ export function AuthScreen() {
     setIsLoading(false);
 
     if (result.success) {
+      // Mark that user has seen login and set stay signed in preference
+      await launchFlagsService.markSeenLoginOnce();
+      await launchFlagsService.setStaySignedIn(staySignedIn);
       Alert.alert('Success', 'Account created successfully! Please check your email to verify your account.');
       setMode('signin');
     } else {
@@ -98,6 +106,9 @@ export function AuthScreen() {
     setIsLoading(false);
 
     if (result.success) {
+      // Mark that user has seen login and set guest status
+      await launchFlagsService.markSeenLoginOnce();
+      await launchFlagsService.setGuest(true);
       // Guest mode entered successfully, no need to show alert
       // The app will automatically navigate to the main screen
     } else {
@@ -210,6 +221,18 @@ export function AuthScreen() {
     },
     guestButtonText: {
       color: colors.textSecondary,
+    },
+    checkboxContainer: {
+      marginVertical: SPACING.sm,
+    },
+    checkbox: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    checkboxText: {
+      ...TYPOGRAPHY.body,
+      color: colors.textPrimary,
+      marginLeft: SPACING.xs,
     },
     linkContainer: {
       flexDirection: 'row',
@@ -325,6 +348,22 @@ export function AuthScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
               />
+            </View>
+          )}
+
+          {(mode === 'signin' || mode === 'signup') && (
+            <View style={styles.checkboxContainer}>
+              <TouchableOpacity
+                style={styles.checkbox}
+                onPress={() => setStaySignedIn(!staySignedIn)}
+              >
+                <Ionicons
+                  name={staySignedIn ? 'checkbox' : 'square-outline'}
+                  size={20}
+                  color={staySignedIn ? colors.accent : colors.textSecondary}
+                />
+                <Text style={styles.checkboxText}>Stay signed in</Text>
+              </TouchableOpacity>
             </View>
           )}
 

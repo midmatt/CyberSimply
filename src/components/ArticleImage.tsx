@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Image, StyleSheet, Text } from 'react-native';
+import { View, StyleSheet, Text } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { TYPOGRAPHY, SPACING } from '../constants';
@@ -48,7 +49,6 @@ export const ArticleImage: React.FC<ArticleImageProps> = ({
     image: {
       width: '100%',
       height: '100%',
-      resizeMode: 'cover',
       ...style,
     },
     placeholder: {
@@ -76,17 +76,15 @@ export const ArticleImage: React.FC<ArticleImageProps> = ({
     },
   });
 
-  // If no image URL or image failed to load, show placeholder
-  if (!imageUrl || imageError) {
+  // Only render if imageUrl exists
+  if (!imageUrl) {
     if (!showPlaceholder) return null;
     
     return (
       <View style={[styles.container, containerStyle]}>
         <View style={styles.placeholder}>
           <Ionicons name="newspaper-outline" size={48} color={colors.textSecondary} />
-          <Text style={styles.placeholderText}>
-            {imageError ? 'Image failed to load' : 'No image available'}
-          </Text>
+          <Text style={styles.placeholderText}>No image available</Text>
         </View>
       </View>
     );
@@ -102,6 +100,10 @@ export const ArticleImage: React.FC<ArticleImageProps> = ({
       <Image
         source={{ uri: imageUrl }}
         style={[styles.image, style]}
+        contentFit="cover"
+        cachePolicy="memory-disk"
+        placeholder={require('../../assets/placeholders/hourglass.png')}
+        transition={300}
         onError={handleImageError}
         onLoad={handleImageLoad}
         onLoadStart={handleImageLoadStart}

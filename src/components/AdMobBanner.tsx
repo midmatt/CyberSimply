@@ -18,20 +18,23 @@ interface AdMobBannerProps {
   position?: 'top' | 'bottom' | 'inline';
   size?: 'banner' | 'large' | 'medium' | 'small';
   onAdPress?: () => void;
-  showCloseButton?: boolean;
+  canShowCloseButton?: boolean;
 }
 
 export function AdMobBannerComponent({
   position = 'inline',
   size = 'banner',
   onAdPress,
-  showCloseButton = false
+  canShowCloseButton = false
 }: AdMobBannerProps) {
   const { colors } = useTheme();
   const { isAdFree } = useAdFree();
   const [isVisible, setIsVisible] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Only show close button for premium users
+  const canShowCloseButton = canShowCloseButton && isAdFree;
 
   const styles = StyleSheet.create({
     container: {
@@ -153,7 +156,7 @@ export function AdMobBannerComponent({
           <Text style={styles.adLabelText}>AD</Text>
         </View>
         
-        {showCloseButton && (
+        {canShowCloseButton && (
           <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
             <Ionicons name="close" size={16} color={colors.textSecondary} />
           </TouchableOpacity>
@@ -175,7 +178,7 @@ export function AdMobBannerComponent({
           <Text style={styles.adLabelText}>AD</Text>
         </View>
         
-        {showCloseButton && (
+        {canShowCloseButton && (
           <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
             <Ionicons name="close" size={16} color={colors.textSecondary} />
           </TouchableOpacity>
@@ -196,7 +199,7 @@ export function AdMobBannerComponent({
         <Text style={styles.adLabelText}>AD</Text>
       </View>
       
-      {showCloseButton && (
+      {canShowCloseButton && (
         <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
           <Ionicons name="close" size={16} color={colors.textSecondary} />
         </TouchableOpacity>

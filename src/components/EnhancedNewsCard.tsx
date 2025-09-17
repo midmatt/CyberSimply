@@ -120,6 +120,12 @@ export const EnhancedNewsCard = memo(({
       marginBottom: SPACING.xs,
       lineHeight: 22,
     },
+    authorLine: {
+      ...TYPOGRAPHY.caption,
+      color: colors.textSecondary,
+      marginBottom: SPACING.xs,
+      fontStyle: 'italic',
+    },
     metaInfo: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -277,6 +283,9 @@ export const EnhancedNewsCard = memo(({
           <View style={styles.headerLeft}>
             <Text style={styles.title} numberOfLines={2}>
               {formatTextForDisplay(article.title)}
+            </Text>
+            <Text style={styles.authorLine}>
+              {article.author?.trim()?.length ? article.author.trim() : article.source} (simplified with AI)
             </Text>
             <View style={styles.metaInfo}>
               <Text style={styles.source}>{article.source}</Text>

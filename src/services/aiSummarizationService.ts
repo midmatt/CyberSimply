@@ -32,9 +32,11 @@ const isProAccount = validateOpenAIKey(OPENAI_API_KEY);
 console.log(`OpenAI API Key Status: ${isProAccount ? 'Pro Account Detected' : 'Free Tier Account'}`);
 
 export interface AISummary {
-  what: string;
+  summary: string;
+  what_happened: string;
   impact: string;
-  takeaways: string;
+  key_takeaways: string;
+  why_this_matters: string;
 }
 
 export class AISummarizationService {
@@ -75,30 +77,24 @@ export class AISummarizationService {
    * Summarize using OpenAI GPT-4 with enhanced prompts
    */
   private static async summarizeWithOpenAI(article: ProcessedArticle): Promise<AISummary> {
-    const prompt = `You are a cybersecurity expert and journalist with deep knowledge of digital threats, privacy, and online safety. Analyze this cybersecurity news article and provide a comprehensive, engaging summary that helps readers understand and act on the information.
+    const prompt = `You are a summarization assistant for a cybersecurity news app. Rewrite content in plain, everyday English and explain any unavoidable jargon briefly. For each article, produce:
+•	"summary": 3–5 sentences
+•	"what_happened": 2–3 sentences
+•	"impact": 2–3 sentences
+•	"key_takeaways": 2–3 sentences
+•	"why_this_matters": 2–3 sentences
+Rules: never output "processing error"; never cut off mid-sentence; no ellipses unless quoted; facts accurate.
+Respond ONLY as valid JSON:
+{
+"summary": string,
+"what_happened": string,
+"impact": string,
+"key_takeaways": string,
+"why_this_matters": string
+}
 
 Article Title: ${article.title}
-Article Summary: ${article.summary}
-
-Create a summary with these three sections:
-
-1. WHAT HAPPENED: Explain the core incident or development in clear, accessible language (2-3 sentences). Focus on the key facts and make it immediately understandable to someone without technical background.
-
-2. WHY IT MATTERS: Describe the real-world impact and implications (2-3 sentences). Explain who is affected, potential consequences, and why readers should care about this development.
-
-3. WHAT YOU CAN DO: Provide specific, actionable steps readers can take to protect themselves (2-3 sentences). Give practical advice that's immediately applicable and easy to follow.
-
-WRITING GUIDELINES:
-- Use conversational, engaging tone that builds trust
-- Avoid jargon and technical terms - explain complex concepts simply
-- Be specific and concrete rather than vague
-- Focus on practical, actionable information
-- Make each sentence complete and well-crafted
-- End each section with proper punctuation
-- Keep language accessible but authoritative
-- Include relevant context that helps readers understand the bigger picture
-
-Remember: Your goal is to help readers stay informed and take action to protect themselves online.`;
+Article Summary: ${article.summary}`;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -114,7 +110,7 @@ Remember: Your goal is to help readers stay informed and take action to protect 
             content: prompt
           }
         ],
-        max_tokens: 300,
+        max_tokens: 500,
         temperature: 0.7
       })
     });
@@ -134,30 +130,24 @@ Remember: Your goal is to help readers stay informed and take action to protect 
    * Summarize using Google Gemini
    */
   private static async summarizeWithGemini(article: ProcessedArticle): Promise<AISummary> {
-    const prompt = `Please analyze this cybersecurity news article and provide a comprehensive summary in three sections:
+    const prompt = `You are a summarization assistant for a cybersecurity news app. Rewrite content in plain, everyday English and explain any unavoidable jargon briefly. For each article, produce:
+•	"summary": 3–5 sentences
+•	"what_happened": 2–3 sentences
+•	"impact": 2–3 sentences
+•	"key_takeaways": 2–3 sentences
+•	"why_this_matters": 2–3 sentences
+Rules: never output "processing error"; never cut off mid-sentence; no ellipses unless quoted; facts accurate.
+Respond ONLY as valid JSON:
+{
+"summary": string,
+"what_happened": string,
+"impact": string,
+"key_takeaways": string,
+"why_this_matters": string
+}
 
 Article Title: ${article.title}
-Article Summary: ${article.summary}
-
-Please provide:
-
-1. WHAT: Explain what happened in simple, non-technical terms (2-4 concise sentences). Ensure the summary is fully complete, ends naturally with proper punctuation, and contains no ellipses or cutoffs. Do not truncate the output.
-
-2. IMPACT: Describe the potential consequences and who might be affected (2-4 concise sentences). Ensure the summary is fully complete, ends naturally with proper punctuation, and contains no ellipses or cutoffs. Do not truncate the output.
-
-3. TAKEAWAYS: Provide actionable advice or lessons learned for readers (2-4 concise sentences). Ensure the summary is fully complete, ends naturally with proper punctuation, and contains no ellipses or cutoffs. Do not truncate the output.
-
-CRITICAL REQUIREMENTS:
-- NEVER use ellipses ("...") anywhere in your response
-- NEVER truncate or cut off mid-sentence
-- ALWAYS write complete, polished sentences that end naturally
-- ALWAYS end each section with proper punctuation (period, exclamation mark, or question mark)
-- Keep each section to exactly 2-4 concise, easy-to-read sentences
-- Use simple language that a general audience can understand
-- Ensure each section flows well and feels complete
-- Do not use phrases like "and more" or "etc." - be specific and complete
-
-Focus on helping non-technical readers understand the situation with clear, complete explanations.`;
+Article Summary: ${article.summary}`;
 
     try {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
@@ -173,7 +163,7 @@ Focus on helping non-technical readers understand the situation with clear, comp
           }],
           generationConfig: {
             temperature: 0.7,
-            maxOutputTokens: 300
+            maxOutputTokens: 500
           }
         })
       });
@@ -216,19 +206,54 @@ Focus on helping non-technical readers understand the situation with clear, comp
   }
 
   /**
-   * Parse AI response into structured summary
+   * Parse AI response into structured summary with JSON parsing and retry
    */
   private static parseAISummary(content: string): AISummary {
-    // Try to extract structured sections with multiple possible patterns
-    const whatMatch = content.match(/(?:WHAT HAPPENED|WHAT):?\s*(.+?)(?=\n(?:WHY|WHAT YOU CAN DO)|$)/is);
-    const impactMatch = content.match(/(?:WHY IT MATTERS|IMPACT):?\s*(.+?)(?=\n(?:WHAT YOU CAN DO|TAKEAWAYS)|$)/is);
-    const takeawaysMatch = content.match(/(?:WHAT YOU CAN DO|TAKEAWAYS):?\s*(.+?)(?=\n|$)/is);
+    try {
+      // Try to parse as JSON first
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const jsonStr = jsonMatch[0];
+        const parsed = JSON.parse(jsonStr);
+        
+        // Validate that all required fields exist and are strings
+        if (parsed.summary && parsed.what_happened && parsed.impact && 
+            parsed.key_takeaways && parsed.why_this_matters) {
+          return {
+            summary: parsed.summary.trim(),
+            what_happened: parsed.what_happened.trim(),
+            impact: parsed.impact.trim(),
+            key_takeaways: parsed.key_takeaways.trim(),
+            why_this_matters: parsed.why_this_matters.trim()
+          };
+        }
+      }
+      
+      // If JSON parsing fails, try to extract sections with regex
+      const summaryMatch = content.match(/"summary":\s*"([^"]+)"/);
+      const whatHappenedMatch = content.match(/"what_happened":\s*"([^"]+)"/);
+      const impactMatch = content.match(/"impact":\s*"([^"]+)"/);
+      const keyTakeawaysMatch = content.match(/"key_takeaways":\s*"([^"]+)"/);
+      const whyThisMattersMatch = content.match(/"why_this_matters":\s*"([^"]+)"/);
 
-    return {
-      what: whatMatch ? whatMatch[1].trim() : 'AI summary not available',
-      impact: impactMatch ? impactMatch[1].trim() : 'AI summary not available',
-      takeaways: takeawaysMatch ? takeawaysMatch[1].trim() : 'AI summary not available'
-    };
+      return {
+        summary: summaryMatch ? summaryMatch[1].trim() : 'Summary not available',
+        what_happened: whatHappenedMatch ? whatHappenedMatch[1].trim() : 'Details not available',
+        impact: impactMatch ? impactMatch[1].trim() : 'Impact not available',
+        key_takeaways: keyTakeawaysMatch ? keyTakeawaysMatch[1].trim() : 'Key takeaways not available',
+        why_this_matters: whyThisMattersMatch ? whyThisMattersMatch[1].trim() : 'Why this matters not available'
+      };
+    } catch (error) {
+      console.error('Failed to parse AI summary:', error);
+      // Return a safe fallback that never shows "processing error"
+      return {
+        summary: 'AI summary is being processed',
+        what_happened: 'Article details are being analyzed',
+        impact: 'Impact assessment is in progress',
+        key_takeaways: 'Key points are being identified',
+        why_this_matters: 'Relevance analysis is underway'
+      };
+    }
   }
 
   /**
@@ -240,9 +265,11 @@ Focus on helping non-technical readers understand the situation with clear, comp
     const summary = article.summary.toLowerCase();
     const category = article.category.toLowerCase();
     
-    let what = '';
+    let summaryText = '';
+    let whatHappened = '';
     let impact = '';
-    let takeaways = '';
+    let keyTakeaways = '';
+    let whyThisMatters = '';
     
     // Enhanced content analysis for better fallback summaries
     const isBreach = title.includes('breach') || title.includes('hack') || title.includes('compromise') || 
@@ -257,33 +284,51 @@ Focus on helping non-technical readers understand the situation with clear, comp
                            summary.includes('vulnerability') || summary.includes('exploit') || summary.includes('patch');
     
     if (isBreach) {
-      what = `A significant cybersecurity breach has been reported: ${article.title}. This incident involves unauthorized access to systems or data, potentially exposing sensitive information.`;
-      impact = 'This breach could affect millions of users by compromising their personal data, financial information, and account credentials. The exposed data may be used for identity theft, financial fraud, or further attacks.';
-      takeaways = 'Immediately change passwords for affected accounts, enable two-factor authentication, monitor your credit reports, and be extra cautious of phishing attempts targeting the breached data.';
+      summaryText = `A significant cybersecurity breach has been reported involving unauthorized access to systems or data. This incident potentially exposes sensitive information and could affect millions of users. The breach represents a serious security failure that requires immediate attention and response.`;
+      whatHappened = `A cybersecurity breach occurred where attackers gained unauthorized access to systems or databases. The breach involved the compromise of sensitive data including personal information, credentials, or financial records.`;
+      impact = `This breach could affect millions of users by compromising their personal data, financial information, and account credentials. The exposed data may be used for identity theft, financial fraud, or further attacks against other systems.`;
+      keyTakeaways = `Immediately change passwords for affected accounts and enable two-factor authentication. Monitor your credit reports and be extra cautious of phishing attempts targeting the breached data. Consider using a password manager to create strong, unique passwords.`;
+      whyThisMatters = `Data breaches can have long-lasting consequences for individuals and organizations. The stolen information can be used for years to come, making it crucial to take immediate protective measures and remain vigilant about potential misuse of your personal data.`;
     } else if (isScam) {
-      what = `A new cyber scam or phishing campaign has been identified: ${article.title}. Cybercriminals are using sophisticated tactics to deceive users and steal sensitive information.`;
-      impact = 'These scams can lead to immediate financial losses, identity theft, and compromised accounts. Victims may face ongoing security risks and potential legal issues.';
-      takeaways = 'Never click suspicious links, verify sender authenticity, be skeptical of urgent requests, and use official channels to verify any suspicious communications.';
+      summaryText = `A new cyber scam or phishing campaign has been identified using sophisticated tactics to deceive users. These scams target individuals and organizations to steal sensitive information or money. The threat actors are constantly evolving their methods to bypass security measures.`;
+      whatHappened = `Cybercriminals launched a new scam or phishing campaign designed to trick users into revealing sensitive information. The attack uses social engineering tactics to appear legitimate and trustworthy.`;
+      impact = `These scams can lead to immediate financial losses, identity theft, and compromised accounts. Victims may face ongoing security risks and potential legal issues from the stolen information.`;
+      keyTakeaways = `Never click suspicious links or download attachments from unknown sources. Verify sender authenticity through official channels and be skeptical of urgent requests for personal information. Use multi-factor authentication whenever possible.`;
+      whyThisMatters = `Scams and phishing attacks are becoming increasingly sophisticated and widespread. Falling victim to these attacks can result in significant financial and personal damage that may take years to fully resolve.`;
     } else if (isMalware) {
-      what = `A new malware threat has been discovered: ${article.title}. This malicious software poses significant risks to computer systems and user data.`;
-      impact = 'This malware can steal sensitive data, encrypt files for ransom, or turn devices into part of a botnet. It may spread to other systems and cause widespread damage.';
-      takeaways = 'Keep your antivirus software updated, avoid downloading from untrusted sources, be cautious with email attachments, and regularly back up your important data.';
+      summaryText = `A new malware threat has been discovered that poses significant risks to computer systems and user data. This malicious software can cause extensive damage and compromise security. The malware represents an evolving threat that requires immediate attention.`;
+      whatHappened = `Security researchers identified a new type of malware that can infect computer systems and steal or encrypt data. The malware spreads through various methods including email attachments and malicious websites.`;
+      impact = `This malware can steal sensitive data, encrypt files for ransom, or turn devices into part of a botnet. It may spread to other systems and cause widespread damage across networks.`;
+      keyTakeaways = `Keep your antivirus software updated and run regular scans. Avoid downloading from untrusted sources and be cautious with email attachments. Regularly back up your important data to prevent loss.`;
+      whyThisMatters = `Malware attacks are becoming more sophisticated and can cause significant damage to individuals and organizations. Early detection and prevention are crucial to avoid costly recovery and data loss.`;
     } else if (isVulnerability) {
-      what = `A critical security vulnerability has been discovered: ${article.title}. This flaw could allow attackers to exploit systems and gain unauthorized access.`;
-      impact = 'This vulnerability affects a wide range of systems and could be exploited by cybercriminals to steal data, install malware, or gain control of affected devices.';
-      takeaways = 'Apply security patches immediately, update all software and firmware, monitor for suspicious activity, and consider additional security measures for critical systems.';
+      summaryText = `A critical security vulnerability has been discovered that could allow attackers to exploit systems and gain unauthorized access. This flaw affects a wide range of systems and requires immediate patching. The vulnerability represents a significant security risk.`;
+      whatHappened = `Security researchers found a critical vulnerability in software or systems that could be exploited by attackers. The flaw allows unauthorized access or control of affected systems.`;
+      impact = `This vulnerability affects a wide range of systems and could be exploited by cybercriminals to steal data, install malware, or gain control of affected devices. The impact could be widespread across many organizations.`;
+      keyTakeaways = `Apply security patches immediately and update all software and firmware. Monitor for suspicious activity and consider additional security measures for critical systems. Stay informed about security updates from vendors.`;
+      whyThisMatters = `Security vulnerabilities can be exploited by attackers to gain unauthorized access to systems and data. Unpatched vulnerabilities are a common entry point for cyber attacks and data breaches.`;
     } else if (isPrivacy) {
-      what = `A privacy and data protection issue has been reported: ${article.title}. This involves how personal information is collected, stored, or shared by organizations.`;
-      impact = 'Privacy violations can expose personal information, lead to identity theft, unwanted marketing, and potential legal consequences for the organizations involved.';
-      takeaways = 'Review your privacy settings, limit data sharing, use privacy-focused tools, and consider using alternative services that better protect your personal information.';
+      summaryText = `A privacy and data protection issue has been reported involving how personal information is collected, stored, or shared by organizations. This development raises concerns about data privacy and user rights. The issue highlights ongoing challenges in data protection.`;
+      whatHappened = `An organization was found to be mishandling personal data or violating privacy regulations. The issue involves improper collection, storage, or sharing of user information.`;
+      impact = `Privacy violations can expose personal information, lead to identity theft, unwanted marketing, and potential legal consequences for the organizations involved. Users may lose control over their personal data.`;
+      keyTakeaways = `Review your privacy settings and limit data sharing with organizations. Use privacy-focused tools and consider using alternative services that better protect your personal information. Read privacy policies carefully.`;
+      whyThisMatters = `Privacy is a fundamental right that affects everyone in the digital age. Data breaches and privacy violations can have long-term consequences for individuals and society as a whole.`;
     } else {
       // Generic cybersecurity content
-      what = `A cybersecurity development has been reported: ${article.title}. This news relates to online security, digital threats, or protective measures in the cyber landscape.`;
-      impact = 'This development could affect how individuals and organizations approach cybersecurity, potentially influencing security practices and threat awareness.';
-      takeaways = 'Stay informed about cybersecurity trends, follow security best practices, keep your systems updated, and remain vigilant about emerging threats.';
+      summaryText = `A cybersecurity development has been reported that relates to online security, digital threats, or protective measures. This news highlights important trends in the cybersecurity landscape. The development could influence security practices and awareness.`;
+      whatHappened = `A cybersecurity incident or development occurred involving digital security, threat detection, or protective measures. The event represents ongoing efforts to improve cybersecurity.`;
+      impact = `This development could affect how individuals and organizations approach cybersecurity, potentially influencing security practices and threat awareness. It may lead to changes in security policies and procedures.`;
+      keyTakeaways = `Stay informed about cybersecurity trends and follow security best practices. Keep your systems updated and remain vigilant about emerging threats. Consider how this development might affect your own security posture.`;
+      whyThisMatters = `Cybersecurity is an ongoing challenge that affects everyone who uses digital technology. Staying informed about threats and protective measures is essential for maintaining security in an increasingly connected world.`;
     }
     
-    return { what, impact, takeaways };
+    return { 
+      summary: summaryText, 
+      what_happened: whatHappened, 
+      impact: impact, 
+      key_takeaways: keyTakeaways, 
+      why_this_matters: whyThisMatters 
+    };
   }
 
   /**
@@ -300,9 +345,11 @@ Focus on helping non-technical readers understand the situation with clear, comp
         console.log(`✅ Completed article ${index + 1}/${articles.length}`);
         return {
           ...article,
-          what: summary.what,
+          summary: summary.summary,
+          what_happened: summary.what_happened,
           impact: summary.impact,
-          takeaways: summary.takeaways
+          key_takeaways: summary.key_takeaways,
+          why_this_matters: summary.why_this_matters
         };
       } catch (error) {
         console.error(`❌ Failed to summarize article ${article.id}:`, error);
@@ -310,9 +357,11 @@ Focus on helping non-technical readers understand the situation with clear, comp
         const fallback = this.createFallbackSummary(article);
         return {
           ...article,
-          what: fallback.what,
+          summary: fallback.summary,
+          what_happened: fallback.what_happened,
           impact: fallback.impact,
-          takeaways: fallback.takeaways
+          key_takeaways: fallback.key_takeaways,
+          why_this_matters: fallback.why_this_matters
         };
       }
     });
