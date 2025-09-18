@@ -19,8 +19,22 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Verify Node.js version
+        run: |
+          echo "Node.js version:"
+          node --version
+          echo "NPM version:"
+          npm --version
+
       - name: Install dependencies
         run: npm install
+
+      - name: Debug fetch script
+        run: |
+          echo "First 10 lines of fetch-more-articles.js:"
+          head -10 fetch-more-articles.js
+          echo "Checking for uuid imports:"
+          grep -n "uuid" fetch-more-articles.js || echo "No uuid imports found"
 
       - name: Fetch and store articles
         run: node fetch-more-articles.js
