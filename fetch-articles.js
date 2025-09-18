@@ -2,7 +2,7 @@
 // Run this with: node fetch-articles.js
 
 const { createClient } = require('@supabase/supabase-js');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 
 // Replace with your actual Supabase credentials
 const supabaseUrl = 'https://uaykrxfhzfkhjwnmvukb.supabase.co';
@@ -32,7 +32,7 @@ async function fetchAndStoreArticles() {
     
     // Convert to our format and store in Supabase
     const articles = data.articles.map((article, index) => ({
-      id: uuidv4(),
+      id: crypto.randomUUID(),
       title: article.title,
       summary: article.description || '',
       source_url: article.url,
