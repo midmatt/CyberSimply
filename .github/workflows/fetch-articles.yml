@@ -10,33 +10,25 @@ on:
 jobs:
   fetch-articles:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        cache: 'npm'
-        
-    - name: Install dependencies
-      run: |
-        cd CyberSimply
-        npm install
-        
-    - name: Fetch and store articles
-      run: |
-        cd CyberSimply
-        node fetch-more-articles.js
-      env:
-        NODE_ENV: production
-        
-    - name: Notify on success
-      if: success()
-      run: echo "✅ Successfully fetched fresh articles at $(date)"
-      
-    - name: Notify on failure
-      if: failure()
-      run: echo "❌ Failed to fetch articles at $(date)"
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Fetch and store articles
+        run: node fetch-more-articles.js
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          EXPO_PUBLIC_OPENAI_API_KEY: ${{ secrets.EXPO_PUBLIC_OPENAI_API_KEY }}
+          NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
+          SERPAPI_SECRET_KEY: ${{ secrets.SERPAPI_SECRET_KEY }}
+          NEWSDATA_API_KEY: ${{ secrets.NEWSDATA_API_KEY }}
