@@ -2,7 +2,7 @@
 // Run this with: node fetch-more-articles.js
 
 const { createClient } = require('@supabase/supabase-js');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 
 // Replace with your actual Supabase credentials
 const supabaseUrl = 'https://uaykrxfhzfkhjwnmvukb.supabase.co';
@@ -35,15 +35,15 @@ async function fetchArticlesForCategory(category, query) {
     
     // Convert to our format
     const articles = data.articles.map((article, index) => ({
-      id: uuidv4(),
+      id: crypto.randomUUID(),
       title: article.title,
       summary: article.description || '',
-      source_url: article.url,
-      source: article.source.name,
+          source_url: article.url,
+          source: article.source.name,
       author: article.author,
-      published_at: article.publishedAt,
+          published_at: article.publishedAt,
       image_url: article.urlToImage,
-      category: category,
+          category: category,
       what: '',
       impact: '',
       takeaways: '',
@@ -67,7 +67,7 @@ async function fetchAndStoreAllArticles() {
     // Fetch articles for each category
     for (const [category, query] of Object.entries(searchQueries)) {
       const articles = await fetchArticlesForCategory(category, query);
-      allArticles = allArticles.concat(articles);
+        allArticles = allArticles.concat(articles);
       
       // Small delay between requests to be respectful to NewsAPI
       await new Promise(resolve => setTimeout(resolve, 1000));
