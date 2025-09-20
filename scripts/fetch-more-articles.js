@@ -134,7 +134,8 @@ Return ONLY the JSON object, no other text.`
       parsed = JSON.parse(cleanContent);
     } catch (parseError) {
       console.warn("Failed to parse AI response as JSON:", parseError.message);
-      console.warn("Raw response:", content);
+      console.warn("Raw completion.choices[0].message:", aiResponse.choices?.[0]?.message);
+      console.warn("Raw content:", content);
       return null;
     }
     
@@ -205,6 +206,7 @@ Return ONLY the JSON object, no other text.`
     }
     
     console.log("✅ AI response validated successfully with all 5 required fields");
+    console.log("✅ AI summary generated:", JSON.stringify(parsed, null, 2));
     return parsed;
 }
 
