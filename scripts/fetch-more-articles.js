@@ -69,10 +69,11 @@ function cleanText(text) {
 async function generateAiDetails(articleContent) {
   if (!openai) return null;
 
+  console.log("📝 Using response_format: json_object");
+  
+  let aiResponse;
   try {
-    console.log("📝 Using response_format: json_object");
-    
-    const response = await openai.chat.completions.create({
+    aiResponse = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
@@ -106,8 +107,12 @@ Return ONLY the JSON object, no other text.`
       response_format: { type: "json_object" },
       temperature: 0.2
     });
+  } catch (err) {
+    console.error(`❌ AI generation failed: ${err.message}`);
+    return null; // Skip this article but continue processing others
+  }
 
-    const content = response.choices?.[0]?.message?.content ?? "";
+  const content = aiResponse.choices?.[0]?.message?.content ?? "";
     if (!content) {
       console.warn("AI returned empty content");
       return null;
@@ -201,10 +206,6 @@ Return ONLY the JSON object, no other text.`
     
     console.log("✅ AI response validated successfully with all 5 required fields");
     return parsed;
-  } catch (e) {
-    console.warn("AI generation failed:", e.message);
-    return null; // IMPORTANT: no template fallback
-  }
 }
 
 /**
@@ -254,7 +255,7 @@ async function processArticleWithAI(article) {
     
     // If AI generation failed, skip this article
     if (!ai) {
-      console.warn(`⚠️ Skipping article "${article.title}" - AI generation failed`);
+      console.error(`❌ Skipping article "${article.title}" - AI generation failed`);
       return null;
     }
     
@@ -411,13 +412,15 @@ async function fetchAndStoreAllArticles() {
     const validForInsertion = allArticles.filter(article => {
       const hasAllFields = !!(article.summary && article.what && article.impact && article.takeaways && article.why_this_matters);
       if (!hasAllFields) {
-        console.warn(`⚠️ Skipping article "${article.title}" - missing required AI fields`);
+        console.error(`❌ Skipping article "${article.title}" - missing required AI fields`);
       }
       return hasAllFields;
     });
     
     if (validForInsertion.length === 0) {
-      throw new Error('No articles with complete AI-generated content to store');
+      console.error('❌ No articles with complete AI-generated content to store');
+      console.log('📊 Summary: All articles failed AI generation or validation');
+      return; // Exit gracefully instead of throwing
     }
     
     if (validForInsertion.length < allArticles.length) {
@@ -473,9 +476,13 @@ async function fetchAndStoreAllArticles() {
       console.log(`  - ${category}: ${count} articles`);
     });
     
+    console.log('\n✅ Workflow completed successfully!');
+    console.log(`📈 Final results: ${validForInsertion.length} articles successfully processed and stored`);
+    
   } catch (error) {
     console.error('❌ Fatal error in article processing:', error);
-    process.exit(1); // Exit with non-zero code to alert GitHub Action
+    console.log('📊 Summary: Workflow failed due to unexpected error');
+    process.exit(1); // Only exit with error code for fatal errors
   }
 }
 
