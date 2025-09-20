@@ -8,41 +8,29 @@ on:
   workflow_dispatch:
 
 jobs:
-  fetch-articles:
+  fetch:
     runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
+      NEWSDATA_API_KEY: ${{ secrets.NEWSDATA_API_KEY }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 20
 
-      - name: Verify Node.js version
-        run: |
-          echo "Node.js version:"
-          node --version
-          echo "NPM version:"
-          npm --version
+      - name: Print Node version
+        run: node -v
 
       - name: Install dependencies
         run: npm install
 
-      - name: Debug fetch script
-        run: |
-          echo "First 10 lines of fetch-more-articles.js:"
-          head -10 fetch-more-articles.js
-          echo "Checking for uuid imports:"
-          grep -n "uuid" fetch-more-articles.js || echo "No uuid imports found"
-
-      - name: Fetch and store articles
+      - name: Run fetch script
         run: node fetch-more-articles.js
-        env:
-          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
-          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          EXPO_PUBLIC_OPENAI_API_KEY: ${{ secrets.EXPO_PUBLIC_OPENAI_API_KEY }}
-          NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
-          SERPAPI_SECRET_KEY: ${{ secrets.SERPAPI_SECRET_KEY || '' }}
-          NEWSDATA_API_KEY: ${{ secrets.NEWSDATA_API_KEY }}

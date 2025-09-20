@@ -3,12 +3,20 @@
 import OpenAI from "openai";
 import Constants from 'expo-constants';
 
-// Initialize OpenAI client
-const client = new OpenAI({ 
-  apiKey: "process.env.OPENAI_API_KEY-z0eVlWP3PfeoVhtPlqgAsIYx4DE-CJY-bZqgpnpFdePl8hu4WBDYXzY21D-w2qM2GN4xwI-xl4T3BlbkFJPL6vdd10DpjeNMhizmc6kMGD4127VaSLdSRRE_HVGW5v_okiw9Wf30kI8kzx7h1R5jt1_X-ZsA"
-});
+// Define the API key from Expo extra config
+const { OPENAI_API_KEY } = Constants.expoConfig?.extra || {};
+console.log("🔑 Loaded OPENAI_API_KEY (sanitized):", OPENAI_API_KEY ? OPENAI_API_KEY.substring(0, 7) + "..." : "MISSING");
 
-console.log("🤖 OpenAI client initialized with API key:", client.apiKey ? "✅ Present" : "❌ Missing");
+// Initialize OpenAI client only if we have a valid API key
+let client: OpenAI | null = null;
+if (OPENAI_API_KEY) {
+  client = new OpenAI({ 
+    apiKey: OPENAI_API_KEY
+  });
+  console.log("🤖 OpenAI client initialized with valid API key");
+} else {
+  console.error("❌ No OpenAI API key found in Expo extra config. AI features will be disabled.");
+}
 
 // Define ProcessedArticle interface locally to avoid import issues
 export interface ProcessedArticle {
@@ -725,6 +733,11 @@ export class UnifiedNewsService {
    */
   private static async extractAuthorWithAI(content: string, title: string): Promise<string | null> {
     try {
+      if (!client) {
+        console.warn("⚠️ OpenAI client not available for author extraction");
+        return null;
+      }
+      
       const response = await client.chat.completions.create({
         model: 'gpt-4o-mini',
         temperature: 0.1,
@@ -892,6 +905,11 @@ export class UnifiedNewsService {
    * Rewrite a single chunk with AI
    */
   private static async rewriteChunk(chunk: string, index: number, total: number): Promise<string> {
+      if (!client) {
+        console.warn("⚠️ OpenAI client not available for chunk rewriting");
+        return chunk; // Return original chunk if AI not available
+      }
+      
       const response = await client.chat.completions.create({
       model: 'gpt-4o-mini',
       temperature: 0.3,
@@ -979,6 +997,12 @@ export class UnifiedNewsService {
     try {
       console.log(`🤖 Processing article with unified AI: ${articleContent.substring(0, 100)}...`);
       
+      // Check if OpenAI client is available
+      if (!client) {
+        console.warn("⚠️ OpenAI client not available, using fallback content");
+        throw new Error("OpenAI client not initialized - no API key provided");
+      }
+      
       const response = await client.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
@@ -1065,12 +1089,15 @@ Article content: ${articleContent}`
       console.error("❌ AI processing failed:", err);
       console.log(`⚠️ Falling back to template content`);
       
+      // Provide better fallback content based on the article
+      const truncatedContent = articleContent.length > 200 ? articleContent.substring(0, 200) + "..." : articleContent;
+      
       return {
-        summary: articleContent, // Don't truncate - let UI handle display
-        what: "What happened: Details not available due to processing error",
-        impact: "Impact: Unable to determine impact due to processing error",
-        takeaways: "Key takeaways: Stay informed about cybersecurity developments",
-        whyThisMatters: "Why this matters: Understanding cybersecurity helps protect your digital safety"
+        summary: `This article discusses ${truncatedContent.toLowerCase()}. Stay informed about the latest developments in cybersecurity and technology.`,
+        what: "What happened: Details not available due to processing error. Please check the full article for complete information.",
+        impact: "Impact: Unable to determine impact due to processing error. This may affect various stakeholders in the cybersecurity ecosystem.",
+        takeaways: "Key takeaways: Stay informed about cybersecurity developments and follow best practices for digital security.",
+        whyThisMatters: "Why this matters: Understanding cybersecurity helps protect your digital safety and personal information."
       };
     }
   }
@@ -1155,6 +1182,11 @@ Article content: ${articleContent}`
     whyThisMatters: string;
   } | null> {
     try {
+      if (!client) {
+        console.warn("⚠️ OpenAI client not available for section generation");
+        return null;
+      }
+      
       const response = await client.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [

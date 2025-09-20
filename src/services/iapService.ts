@@ -89,32 +89,14 @@ export class IAPService {
         return { success: true };
       }
 
-      // Connect to the store
-      await InAppPurchases.connectAsync();
-      console.log('✅ IAP Service: Connected to store');
+      // Add timeout to prevent hanging
+      const initPromise = this.performInitialization();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('IAP initialization timeout')), 15000)
+      );
 
-      // Get available products
-      const response: any = await InAppPurchases.getProductsAsync(this.config.productIds);
+      await Promise.race([initPromise, timeoutPromise]);
       
-      if (response.responseCode === InAppPurchases.IAPResponseCode.OK && response.results) {
-        this.products = response.results.map((product: any) => ({
-          productId: product.productId,
-          price: product.price,
-          currency: product.priceCurrencyCode,
-          title: product.title,
-          description: product.description,
-          localizedPrice: product.price,
-        }));
-      } else {
-        console.warn('Failed to get products:', response.errorCode);
-        this.products = this.getFallbackProducts();
-      }
-
-      console.log(`✅ IAP Service: Found ${this.products.length} products`);
-      this.products.forEach(product => {
-        console.log(`  - ${product.productId}: ${product.localizedPrice}`);
-      });
-
       this.isInitialized = true;
       console.log('✅ IAP Service: Initialized successfully');
       return { success: true };
@@ -127,6 +109,34 @@ export class IAPService {
       console.log('✅ IAP Service: Initialized in fallback mode after error');
       return { success: true };
     }
+  }
+
+  private async performInitialization(): Promise<void> {
+    // Connect to the store
+    await InAppPurchases.connectAsync();
+    console.log('✅ IAP Service: Connected to store');
+
+    // Get available products
+    const response: any = await InAppPurchases.getProductsAsync(this.config.productIds);
+    
+    if (response.responseCode === InAppPurchases.IAPResponseCode.OK && response.results) {
+      this.products = response.results.map((product: any) => ({
+        productId: product.productId,
+        price: product.price,
+        currency: product.priceCurrencyCode,
+        title: product.title,
+        description: product.description,
+        localizedPrice: product.price,
+      }));
+    } else {
+      console.warn('Failed to get products:', response.errorCode);
+      this.products = this.getFallbackProducts();
+    }
+
+    console.log(`✅ IAP Service: Found ${this.products.length} products`);
+    this.products.forEach(product => {
+      console.log(`  - ${product.productId}: ${product.localizedPrice}`);
+    });
   }
 
   /**
@@ -269,6 +279,12 @@ export class IAPService {
         return false;
       }
 
+      // Check if we're connected to the store first
+      if (!this.isInitialized) {
+        console.log('⚠️ IAP Service: Not initialized, returning false for purchase check');
+        return false;
+      }
+
       const response: any = await InAppPurchases.getPurchaseHistoryAsync();
       
       if (response.responseCode === InAppPurchases.IAPResponseCode.OK && response.results) {
@@ -278,6 +294,7 @@ export class IAPService {
       return false;
     } catch (error) {
       console.error('❌ IAP Service: Error checking purchase status:', error);
+      // Return false instead of throwing to prevent infinite loops
       return false;
     }
   }

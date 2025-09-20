@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import RNBootSplash from 'react-native-bootsplash';
 import * as Font from 'expo-font';
 import { Asset } from 'expo-asset';
+import * as SplashScreen from 'expo-splash-screen';
 
 // Context providers
 import { AppProvider } from './src/context/AppContext';
@@ -111,14 +111,14 @@ export default function App() {
         
         // Set ready and hide splash screen
         setIsReady(true);
-        await RNBootSplash.hide({ fade: true });
+        await SplashScreen.hideAsync();
         console.log('✅ Splash screen hidden');
 
       } catch (error) {
         console.error('❌ App initialization error:', error);
         // Still set ready and hide splash even if there's an error
         setIsReady(true);
-        await RNBootSplash.hide({ fade: true });
+        await SplashScreen.hideAsync();
       }
     }
 

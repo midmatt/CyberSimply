@@ -4,11 +4,21 @@
 const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
 
-// Replace with your actual Supabase credentials
-const supabaseUrl = 'https://uaykrxfhzfkhjwnmvukb.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVheWtyeGZoemZraGp3bm12dWtiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc1MjI1ODMsImV4cCI6MjA3MzA5ODU4M30.V4cd5JiLwAgjNUk-VTBicIp52PuH2FAp_UsZMRPlR40';
-const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVheWtyeGZoemZraGp3bm12dWtiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NzUyMjU4MywiZXhwIjoyMDczMDk4NTgzfQ.b83X-KvDkcWyt1i_nXWvaIb2YNxwD3Gk_rKguWzJTyo';
-const newsApiKey = '1a0a46cb62734a659f16de10fe6deb43';
+// Use environment variables for credentials
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const newsApiKey = process.env.NEWS_API_KEY;
+
+// Validate required environment variables
+if (!supabaseUrl || !supabaseKey || !supabaseServiceKey || !newsApiKey) {
+  console.error('❌ Missing required environment variables:');
+  if (!supabaseUrl) console.error('  - SUPABASE_URL');
+  if (!supabaseKey) console.error('  - SUPABASE_ANON_KEY');
+  if (!supabaseServiceKey) console.error('  - SUPABASE_SERVICE_ROLE_KEY');
+  if (!newsApiKey) console.error('  - NEWS_API_KEY');
+  process.exit(1);
+}
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
@@ -33,6 +43,9 @@ async function fetchArticlesForCategory(category, query) {
     
     console.log(`✅ Fetched ${data.articles.length} ${category} articles from NewsAPI`);
     
+    // Log raw data from NewsAPI
+    console.log(`📰 Raw ${category} articles from NewsAPI:`, JSON.stringify(data.articles, null, 2));
+    
     // Convert to our format
     const articles = data.articles.map((article, index) => ({
       id: crypto.randomUUID(),
@@ -50,6 +63,9 @@ async function fetchArticlesForCategory(category, query) {
       why_this_matters: '',
       ai_summary_generated: false
     }));
+    
+    // Log converted articles format
+    console.log(`🔄 Converted ${category} articles to internal format:`, JSON.stringify(articles, null, 2));
     
     return articles;
   } catch (error) {
@@ -79,13 +95,19 @@ async function fetchAndStoreAllArticles() {
     
     console.log(`💾 Storing ${allArticles.length} total articles in Supabase...`);
     
+    // Log what was fetched before inserting
+    console.log("📰 Articles fetched:", JSON.stringify(allArticles, null, 2));
+    
     // Store all articles in Supabase
     const { data: storedArticles, error } = await supabaseAdmin
       .from('articles')
       .upsert(allArticles, { onConflict: 'id' });
     
     if (error) {
+      console.error("❌ Failed to insert articles:", error);
       throw error;
+    } else {
+      console.log("✅ Inserted articles into Supabase:", storedArticles?.length || allArticles.length);
     }
     
     console.log(`✅ Successfully stored ${allArticles.length} articles in Supabase`);

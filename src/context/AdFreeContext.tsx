@@ -30,11 +30,17 @@ export function AdFreeProvider({ children }: AdFreeProviderProps) {
   const { authState } = useSupabase();
   const [adFreeStatus, setAdFreeStatus] = useState<AdFreeStatus | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [lastChecked, setLastChecked] = useState<number>(0);
 
   // Load ad-free status when user changes
   useEffect(() => {
     if (authState.isAuthenticated && authState.user) {
-      checkAdFreeStatus();
+      // Debounce checks to prevent infinite loops
+      const now = Date.now();
+      if (now - lastChecked > 5000) { // Only check every 5 seconds
+        checkAdFreeStatus();
+        setLastChecked(now);
+      }
     } else {
       setAdFreeStatus(null);
     }
@@ -59,10 +65,20 @@ export function AdFreeProvider({ children }: AdFreeProviderProps) {
       return;
     }
 
+    // Prevent multiple simultaneous checks
+    if (isLoading) {
+      return;
+    }
+
     setIsLoading(true);
     try {
-      // Check IAP service first
-      const iapResult = await iapService.checkAdFreeStatus();
+      // Check IAP service first with timeout
+      const iapPromise = iapService.checkAdFreeStatus();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('IAP check timeout')), 10000)
+      );
+      
+      const iapResult = await Promise.race([iapPromise, timeoutPromise]) as any;
       
       if (iapResult.isAdFree) {
         // User has ad-free access via IAP
