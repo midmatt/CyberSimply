@@ -420,7 +420,7 @@ async function fetchAndStoreAllArticles() {
     if (validForInsertion.length === 0) {
       console.error('❌ No articles with complete AI-generated content to store');
       console.log('📊 Summary: All articles failed AI generation or validation');
-      return; // Exit gracefully instead of throwing
+      return 0; // Return 0 to indicate no articles were processed
     }
     
     if (validForInsertion.length < allArticles.length) {
@@ -479,12 +479,38 @@ async function fetchAndStoreAllArticles() {
     console.log('\n✅ Workflow completed successfully!');
     console.log(`📈 Final results: ${validForInsertion.length} articles successfully processed and stored`);
     
+    return validForInsertion.length; // Return the number of successfully processed articles
+    
   } catch (error) {
     console.error('❌ Fatal error in article processing:', error);
     console.log('📊 Summary: Workflow failed due to unexpected error');
-    process.exit(1); // Only exit with error code for fatal errors
+    return 0; // Return 0 to indicate failure
   }
 }
 
-// Run the function
-fetchAndStoreAllArticles();
+// Retry mechanism wrapper
+async function runWithRetry() {
+  let retries = 0;
+  console.log('🔄 Starting article processing with retry mechanism...');
+  
+  let successCount = await fetchAndStoreAllArticles();
+  
+  if (successCount === 0 && retries < 1) {
+    console.warn("⚠️ No articles processed on first attempt, retrying once...");
+    retries++;
+    console.log(`🔄 Retry attempt ${retries}/1`);
+    successCount = await fetchAndStoreAllArticles();
+  }
+  
+  if (successCount === 0) {
+    console.error("❌ Fatal: No articles processed after retry");
+    console.log('📊 Summary: All attempts failed - exiting with error code');
+    process.exit(1);
+  } else {
+    console.log(`✅ Finished with ${successCount} articles processed.`);
+    console.log(`📊 Summary: Successfully processed ${successCount} articles after ${retries + 1} attempt(s)`);
+  }
+}
+
+// Run the function with retry mechanism
+runWithRetry();
