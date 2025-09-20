@@ -118,11 +118,11 @@ export class ArticleStorageService {
       
       return allArticles.filter(article => 
         article.title.toLowerCase().includes(searchTerm) ||
-        article.summary.toLowerCase().includes(searchTerm) ||
+        (article.summary && article.summary.toLowerCase().includes(searchTerm)) ||
         article.category.toLowerCase().includes(searchTerm) ||
-        article.what.toLowerCase().includes(searchTerm) ||
-        article.impact.toLowerCase().includes(searchTerm) ||
-        article.takeaways.toLowerCase().includes(searchTerm)
+        (article.what && article.what.toLowerCase().includes(searchTerm)) ||
+        (article.impact && article.impact.toLowerCase().includes(searchTerm)) ||
+        (article.takeaways && article.takeaways.toLowerCase().includes(searchTerm))
       );
     } catch (error) {
       console.error('ArticleStorage: Failed to search articles:', error);

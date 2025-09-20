@@ -132,22 +132,66 @@ const NewsContext = createContext<NewsContextType | null>(null);
 // Helper function to save articles to both local storage and Supabase
 const saveArticlesToBoth = async (articles: ProcessedArticle[]): Promise<void> => {
   try {
+    // Validate articles before saving
+    if (!articles || articles.length === 0) {
+      console.warn("NewsContext: No articles to save");
+      return;
+    }
+
+    // Filter out invalid articles
+    const validArticles = articles.filter(article => {
+      const isValid = !!(article.title && article.sourceUrl && article.publishedAt && article.source);
+      if (!isValid) {
+        console.warn(`NewsContext: Skipping invalid article: ${article.title || 'Untitled'}`);
+      }
+      return isValid;
+    });
+
+    if (validArticles.length === 0) {
+      console.warn("NewsContext: No valid articles to save after filtering");
+      return;
+    }
+
+    console.log(`NewsContext: Saving ${validArticles.length} valid articles (${articles.length - validArticles.length} invalid articles filtered out)`);
+
     // Save to local storage
-    await ArticleStorageService.saveArticles(articles);
-    console.log(`NewsContext: Saved ${articles.length} articles to local storage`);
+    try {
+      await ArticleStorageService.saveArticles(validArticles);
+      console.log(`NewsContext: Saved ${validArticles.length} articles to local storage`);
+    } catch (storageError) {
+      console.error("NewsContext: Failed to save articles to local storage:", storageError);
+      // Continue with Supabase save even if local storage fails
+    }
     
     // Save to Supabase
-    const supabaseService = SupabaseArticleService.getInstance();
-    const result = await supabaseService.storeArticles(articles);
-    
-    if (result.success) {
-      console.log(`NewsContext: Saved ${result.storedCount} articles to Supabase`);
-    } else {
-      console.warn(`NewsContext: Failed to save articles to Supabase:`, result.error);
+    try {
+      const supabaseService = SupabaseArticleService.getInstance();
+      const result = await supabaseService.storeArticles(validArticles);
+      
+      if (result.success) {
+        console.log(`NewsContext: Saved ${result.storedCount} articles to Supabase`);
+      } else {
+        console.error(`NewsContext: Failed to save articles to Supabase:`, {
+          error: result.error,
+          storedCount: result.storedCount,
+          totalArticles: validArticles.length
+        });
+      }
+    } catch (supabaseError) {
+      console.error("NewsContext: Supabase save failed with exception:", {
+        error: supabaseError,
+        message: supabaseError instanceof Error ? supabaseError.message : 'Unknown error',
+        stack: supabaseError instanceof Error ? supabaseError.stack : undefined
+      });
     }
   } catch (error) {
-    console.error('NewsContext: Error saving articles:', error);
-    throw error;
+    console.error("NewsContext: Unexpected error in saveArticlesToBoth:", {
+      error: error,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      articlesCount: articles?.length || 0
+    });
+    return;
   }
 };
 
@@ -259,36 +303,9 @@ export function NewsProvider({ children }: { children: ReactNode }) {
       console.log(`NewsContext: Total articles in storage: ${allArticles.length}`);
       console.log('NewsContext: Sample article:', allArticles[0]);
 
-      // Start AI summarization in the background for new articles
-      dispatch({ type: 'SET_SUMMARIZING', payload: true });
-      
-      try {
-        // Summarize new articles with AI
-        const summarizedArticles = await AISummarizationService.summarizeArticles(newArticles);
-        
-        // Save summarized articles to storage
-        await saveArticlesToBoth(summarizedArticles);
-        
-        // Get updated articles from storage
-        const updatedArticles = await ArticleStorageService.getArticles();
-        dispatch({ type: 'SET_ARTICLES', payload: updatedArticles });
-        dispatch({ type: 'SET_AI_QUOTA_EXCEEDED', payload: false });
-        
-        // Update storage stats
-        const stats = await ArticleStorageService.getStorageStats();
-        dispatch({ type: 'SET_STORAGE_STATS', payload: stats });
-      } catch (aiError) {
-        console.warn('AI summarization failed, using fallback summaries:', aiError);
-        
-        // Check if it's a quota error
-        if (aiError instanceof Error && aiError.message.includes('429')) {
-          dispatch({ type: 'SET_AI_QUOTA_EXCEEDED', payload: true });
-        }
-        
-        // Articles are still available with basic summaries
-      } finally {
-        dispatch({ type: 'SET_SUMMARIZING', payload: false });
-      }
+      // AI summarization is now handled by GitHub Actions
+      // Articles are pre-processed and stored in Supabase
+      console.log('NewsContext: AI processing handled by GitHub Actions - using pre-processed articles');
 
     } catch (error) {
       console.error('NewsContext: Error in fetchNews:', error);
@@ -343,16 +360,9 @@ export function NewsProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'SET_STORAGE_STATS', payload: stats });
       }
       
-      // Summarize with AI
-      dispatch({ type: 'SET_SUMMARIZING', payload: true });
-      const summarizedArticles = await AISummarizationService.summarizeArticles(allNewArticles);
-      
-      // Save summarized articles to storage
-      await saveArticlesToBoth(summarizedArticles);
-      
-      // Get updated articles from storage
-      const updatedArticles = await ArticleStorageService.getArticles();
-      dispatch({ type: 'SET_ARTICLES', payload: updatedArticles });
+      // AI summarization is now handled by GitHub Actions
+      // Articles are pre-processed and stored in Supabase
+      console.log('NewsContext: AI processing handled by GitHub Actions - using pre-processed articles');
     } catch (error) {
       console.error('NewsContext: Error clearing cache and refreshing:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to refresh news';
@@ -390,17 +400,9 @@ export function NewsProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'SET_STORAGE_STATS', payload: stats });
       }
 
-      // Summarize with AI
-      dispatch({ type: 'SET_SUMMARIZING', payload: true });
-      const summarizedArticles = await AISummarizationService.summarizeArticles(newArticles);
-      
-      // Save summarized articles to storage
-      await ArticleStorageService.saveArticles(summarizedArticles);
-      
-      // Get updated articles from storage
-      const updatedArticles = await ArticleStorageService.getArticles();
-      dispatch({ type: 'SET_ARTICLES', payload: updatedArticles });
-      dispatch({ type: 'SET_SUMMARIZING', payload: false });
+      // AI summarization is now handled by GitHub Actions
+      // Articles are pre-processed and stored in Supabase
+      console.log('NewsContext: AI processing handled by GitHub Actions - using pre-processed articles');
       
       // Update storage stats
       const stats = await ArticleStorageService.getStorageStats();

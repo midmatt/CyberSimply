@@ -1,36 +1,180 @@
-name: Fetch Fresh Articles
+name: Fetch and Summarize Articles
 
 on:
   schedule:
-    # Run every 6 hours (4 times per day)
-    - cron: '0 */6 * * *'
-  # Also allow manual triggering
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
-      NEWSDATA_API_KEY: ${{ secrets.NEWSDATA_API_KEY }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
         with:
           node-version: 20
+      - run: npm install
+      - name: Fetch and Summarize Articles with Structured JSON
+        run: node scripts/fetch-more-articles.js
+        env:
+          # Supabase configuration secrets (must exist in repo settings)
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # API keys for data sources (must exist in repo settings)
+          NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # Supabase CLI authentication
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
-      - name: Print Node version
-        run: node -v
+      # 👇 Clean up existing generic placeholder content
+      - name: Cleanup Generic Article Content
+        run: |
+          # Create a Node.js script to execute SQL via Supabase REST API
+          cat > cleanup-script.js << 'EOF'
+          const { createClient } = require('@supabase/supabase-js');
+          
+          const supabaseUrl = process.env.SUPABASE_URL;
+          const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+          
+          if (!supabaseUrl || !supabaseServiceKey) {
+            console.error('Missing required Supabase environment variables');
+            process.exit(1);
+          }
+          
+          const supabase = createClient(supabaseUrl, supabaseServiceKey);
+          
+          async function cleanupGenericContent() {
+            try {
+              // Read the SQL cleanup file
+              const fs = require('fs');
+              const sqlContent = fs.readFileSync('./sql/cleanup-generic-articles.sql', 'utf8');
+              
+              // Execute the cleanup
+              const { data, error } = await supabase.rpc('exec_sql', { sql: sqlContent });
+              
+              if (error) {
+                console.error('Error cleaning up generic content:', error);
+                process.exit(1);
+              }
+              
+              console.log('✅ Successfully cleaned up generic article content');
+            } catch (err) {
+              console.error('Unexpected error:', err);
+              process.exit(1);
+            }
+          }
+          
+          cleanupGenericContent();
+          EOF
+          
+          node cleanup-script.js
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
-      - name: Install dependencies
-        run: npm install
+      # 👇 Update article fields to TEXT to prevent truncation
+      - name: Update Article Fields to TEXT
+        run: |
+          # Create a Node.js script to execute SQL via Supabase REST API
+          cat > update-fields-script.js << 'EOF'
+          const { createClient } = require('@supabase/supabase-js');
+          
+          const supabaseUrl = process.env.SUPABASE_URL;
+          const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+          
+          if (!supabaseUrl || !supabaseServiceKey) {
+            console.error('Missing required Supabase environment variables');
+            process.exit(1);
+          }
+          
+          const supabase = createClient(supabaseUrl, supabaseServiceKey);
+          
+          async function updateFields() {
+            try {
+              // Read the SQL migration file
+              const fs = require('fs');
+              const sqlContent = fs.readFileSync('./sql/update-article-fields-to-text.sql', 'utf8');
+              
+              // Execute the migration
+              const { data, error } = await supabase.rpc('exec_sql', { sql: sqlContent });
+              
+              if (error) {
+                console.error('Error updating fields to TEXT:', error);
+                process.exit(1);
+              }
+              
+              console.log('✅ Successfully updated article fields to TEXT type');
+            } catch (err) {
+              console.error('Unexpected error:', err);
+              process.exit(1);
+            }
+          }
+          
+          updateFields();
+          EOF
+          
+          node update-fields-script.js
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
-      - name: Run fetch script
-        run: node fetch-more-articles.js
+      # 👇 New step to run SQL migration to backfill article summaries
+      - name: Run SQL migration to backfill article summaries
+        run: |
+          # Create a Node.js script to execute SQL via Supabase REST API
+          cat > backfill-script.js << 'EOF'
+          const { createClient } = require('@supabase/supabase-js');
+          
+          const supabaseUrl = process.env.SUPABASE_URL;
+          const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+          
+          if (!supabaseUrl || !supabaseServiceKey) {
+            console.error('Missing required Supabase environment variables');
+            process.exit(1);
+          }
+          
+          const supabase = createClient(supabaseUrl, supabaseServiceKey);
+          
+          async function backfillArticles() {
+            try {
+              // Update articles that have a summary but missing AI-generated fields
+              const { data, error } = await supabase.rpc('backfill_article_summaries');
+              
+              if (error) {
+                console.error('Error running backfill:', error);
+                process.exit(1);
+              }
+              
+              console.log('Backfill completed successfully:', data);
+            } catch (err) {
+              console.error('Unexpected error:', err);
+              process.exit(1);
+            }
+          }
+          
+          backfillArticles();
+          EOF
+          
+          node backfill-script.js
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      # 👇 Test step to verify article summary fields are populated
+      - name: Test Article Summary Fields
+        run: |
+          # Install Supabase CLI
+          curl -fsSL https://supabase.com/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          
+          # Link to Supabase project
+          npx supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+          
+          # Run test SQL script
+          echo "🔍 Testing article summary fields..."
+          npx supabase db execute ./sql/test-article-summary-check.sql
+        env:
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

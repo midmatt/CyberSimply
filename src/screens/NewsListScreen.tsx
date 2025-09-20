@@ -96,7 +96,7 @@ export function NewsListScreen() {
     const query = searchQuery.toLowerCase();
     return articlesToSearch.filter(article => 
       article.title.toLowerCase().includes(query) ||
-      article.summary.toLowerCase().includes(query) ||
+      (article.summary && article.summary.toLowerCase().includes(query)) ||
       article.category.toLowerCase().includes(query)
     );
   }, [searchQuery, recentArticles, state.articles]);

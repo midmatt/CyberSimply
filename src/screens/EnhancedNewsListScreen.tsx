@@ -388,7 +388,6 @@ export function EnhancedNewsListScreen() {
           value={searchQuery} 
           onChangeText={setSearchQuery}
           placeholder="Search cybersecurity news..."
-          onSubmitEditing={() => handleSearch(searchQuery)}
         />
       </View>
 

@@ -287,7 +287,7 @@ export function ArticleDetail() {
   const source = article.source;
 
   // Format the summary text
-  const summaryText = formatTextForDisplay(content);
+  const summaryText = content ? formatTextForDisplay(content) : null;
   
   // Debug logging
   console.log(`🔍 ArticleDetail - Article data:`, {
@@ -355,7 +355,6 @@ export function ArticleDetail() {
           <Text style={styles.summaryTitle}>Summary</Text>
           <ExpandableSummary 
             text={summaryText || "This article is currently unavailable."}
-            maxLines={3}
             textStyle={{
               color: colors.textPrimary,
               lineHeight: TYPOGRAPHY.body.lineHeight * 1.3,
@@ -365,44 +364,46 @@ export function ArticleDetail() {
 
         {isProcessedArticle && (
           <View style={styles.aiSummaryContainer}>
-            {/* Always display What Happened section */}
-            <View style={styles.aiSection}>
-              <Text style={styles.aiSectionTitle}>What Happened</Text>
-              <ExpandableSummary 
-                text={formatTextForDisplay((article as ProcessedArticle).what || `What happened: ${article.title}`)}
-                maxLines={2}
-                textStyle={styles.aiSectionContent}
-              />
-            </View>
+            {/* Only display What Happened section if data exists */}
+            {(article as ProcessedArticle).what && (
+              <View style={styles.aiSection}>
+                <Text style={styles.aiSectionTitle}>What Happened</Text>
+                <ExpandableSummary 
+                  text={formatTextForDisplay((article as ProcessedArticle).what ?? "")}
+                  textStyle={styles.aiSectionContent}
+                />
+              </View>
+            )}
 
-            {/* Always display Impact section */}
-            <View style={styles.aiSection}>
-              <Text style={styles.aiSectionTitle}>Impact</Text>
-              <ExpandableSummary 
-                text={formatTextForDisplay((article as ProcessedArticle).impact || "Impact: This event affects cybersecurity awareness and best practices.")}
-                maxLines={2}
-                textStyle={styles.aiSectionContent}
-              />
-            </View>
+            {/* Only display Impact section if data exists */}
+            {(article as ProcessedArticle).impact && (
+              <View style={styles.aiSection}>
+                <Text style={styles.aiSectionTitle}>Impact</Text>
+                <ExpandableSummary 
+                  text={formatTextForDisplay((article as ProcessedArticle).impact ?? "")}
+                  textStyle={styles.aiSectionContent}
+                />
+              </View>
+            )}
 
-            {/* Always display Key Takeaways section */}
-            <View style={styles.aiSection}>
-              <Text style={styles.aiSectionTitle}>Key Takeaways</Text>
-              <ExpandableSummary 
-                text={formatTextForDisplay((article as ProcessedArticle).takeaways || "Key takeaways: Stay informed, follow best practices, and monitor new threats.")}
-                maxLines={2}
-                textStyle={styles.aiSectionContent}
-              />
-            </View>
+            {/* Only display Key Takeaways section if data exists */}
+            {(article as ProcessedArticle).takeaways && (
+              <View style={styles.aiSection}>
+                <Text style={styles.aiSectionTitle}>Key Takeaways</Text>
+                <ExpandableSummary 
+                  text={formatTextForDisplay((article as ProcessedArticle).takeaways ?? "")}
+                  textStyle={styles.aiSectionContent}
+                />
+              </View>
+            )}
           </View>
         )}
 
-        {isProcessedArticle && (
+        {isProcessedArticle && (article as ProcessedArticle).whyThisMatters && (
           <View style={styles.whyItMattersContainer}>
             <Text style={styles.whyItMattersTitle}>Why This Matters</Text>
             <ExpandableSummary 
-              text={formatTextForDisplay((article as ProcessedArticle).whyThisMatters || "Why this matters: Understanding these events helps protect your digital safety.")}
-              maxLines={2}
+              text={formatTextForDisplay((article as ProcessedArticle).whyThisMatters ?? "")}
               textStyle={styles.whyItMattersPoint}
             />
           </View>

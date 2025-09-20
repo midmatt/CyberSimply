@@ -1,0 +1,42 @@
+name: Fetch and Summarize Articles (CLI Alternative)
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 20
+      - run: npm install
+      - run: node scripts/fetch-more-articles.js
+        env:
+          # Supabase configuration secrets (must exist in repo settings)
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # API keys for data sources (must exist in repo settings)
+          NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      # Alternative approach using Supabase CLI with proper authentication
+      - name: Setup Supabase CLI
+        run: |
+          curl -fsSL https://supabase.com/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          
+      - name: Run SQL migration to backfill article summaries
+        run: |
+          # Login to Supabase
+          supabase login --token ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          
+          # Link to project
+          supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+          
+          # Execute SQL file
+          supabase db execute ./sql/backfill-article-summaries.sql

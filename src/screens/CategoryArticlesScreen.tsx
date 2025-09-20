@@ -61,29 +61,29 @@ export function CategoryArticlesScreen() {
         filtered = state.articles.filter(article => 
           article.category === 'cybersecurity' && 
           (article.title.toLowerCase().includes('security') || 
-           article.summary.toLowerCase().includes('security') ||
+           (article.summary && article.summary.toLowerCase().includes('security')) ||
            article.title.toLowerCase().includes('protection') ||
-           article.summary.toLowerCase().includes('protection'))
+           (article.summary && article.summary.toLowerCase().includes('protection')))
         );
         break;
       case 'Major Breaches':
         filtered = state.articles.filter(article => 
           article.title.toLowerCase().includes('breach') || 
-          article.summary.toLowerCase().includes('breach') ||
+          (article.summary && article.summary.toLowerCase().includes('breach')) ||
           article.title.toLowerCase().includes('attack') ||
-          article.summary.toLowerCase().includes('attack') ||
+          (article.summary && article.summary.toLowerCase().includes('attack')) ||
           article.title.toLowerCase().includes('hack') ||
-          article.summary.toLowerCase().includes('hack')
+          (article.summary && article.summary.toLowerCase().includes('hack'))
         );
         break;
       case 'Scams to Avoid':
         filtered = state.articles.filter(article => 
           article.title.toLowerCase().includes('scam') || 
-          article.summary.toLowerCase().includes('scam') ||
+          (article.summary && article.summary.toLowerCase().includes('scam')) ||
           article.title.toLowerCase().includes('phish') ||
-          article.summary.toLowerCase().includes('phish') ||
+          (article.summary && article.summary.toLowerCase().includes('phish')) ||
           article.title.toLowerCase().includes('fraud') ||
-          article.summary.toLowerCase().includes('fraud')
+          (article.summary && article.summary.toLowerCase().includes('fraud'))
         );
         break;
       default:
@@ -102,10 +102,10 @@ export function CategoryArticlesScreen() {
     const query = searchQuery.toLowerCase();
     return categoryArticles.filter(article => 
       article.title.toLowerCase().includes(query) ||
-      article.summary.toLowerCase().includes(query) ||
-      article.what.toLowerCase().includes(query) ||
-      article.impact.toLowerCase().includes(query) ||
-      article.takeaways.toLowerCase().includes(query)
+      (article.summary && article.summary.toLowerCase().includes(query)) ||
+      (article.what && article.what.toLowerCase().includes(query)) ||
+      (article.impact && article.impact.toLowerCase().includes(query)) ||
+      (article.takeaways && article.takeaways.toLowerCase().includes(query))
     );
   }, [searchQuery, categoryArticles]);
 
@@ -261,7 +261,6 @@ export function CategoryArticlesScreen() {
         </Text>
         
         <SearchBar
-          onSearch={setSearchQuery}
           value={searchQuery}
           onChangeText={setSearchQuery}
           placeholder={`Search in ${category.name}...`}

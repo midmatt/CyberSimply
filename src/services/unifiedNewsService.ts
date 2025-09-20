@@ -1,39 +1,62 @@
 // Unified News Service - integrates NewsData.io and RSS feeds
 
-import OpenAI from "openai";
-import Constants from 'expo-constants';
+// AI processing has been moved to GitHub Actions
+// The app now fetches pre-processed articles from Supabase
+console.log("🤖 AI processing moved to GitHub Actions - fetching pre-processed articles from Supabase");
 
-// Define the API key from Expo extra config
-const { OPENAI_API_KEY } = Constants.expoConfig?.extra || {};
-console.log("🔑 Loaded OPENAI_API_KEY (sanitized):", OPENAI_API_KEY ? OPENAI_API_KEY.substring(0, 7) + "..." : "MISSING");
+// Helper function to extract content from RSS items
+function getItemBody(item: any): string {
+  // prefer full-content RSS fields if present
+  const encoded = (item['content:encoded'] || item.content || '').toString();
+  const desc = (item.description || item.summary || item.contentSnippet || '').toString();
+  const text = (encoded || desc || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  return text;
+}
 
-// Initialize OpenAI client only if we have a valid API key
-let client: OpenAI | null = null;
-if (OPENAI_API_KEY) {
-  client = new OpenAI({ 
-    apiKey: OPENAI_API_KEY
-  });
-  console.log("🤖 OpenAI client initialized with valid API key");
-} else {
-  console.error("❌ No OpenAI API key found in Expo extra config. AI features will be disabled.");
+// CORS-safe fetch fallback for article pages using Jina Reader
+async function fetchReadableText(url: string): Promise<string> {
+  const hostless = url.replace(/^https?:\/\//i, '');
+  const jinaUrl = `https://r.jina.ai/http://${hostless}`;
+  const res = await fetch(jinaUrl, { method: 'GET' });
+  if (!res.ok) throw new Error(`Jina fetch failed: ${res.status}`);
+  const text = await res.text();
+  // Jina returns readable markdown/text; collapse whitespace
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+// AI Details type for structured output
+type AiDetails = { 
+  summary: string; 
+  whatHappened: string; 
+  impact: string; 
+  takeaways: string[] 
+};
+
+// AI summarizer with strict JSON schema
+async function generateAiDetails(title: string, sourceUrl: string, body: string): Promise<AiDetails | null> {
+  // If OPENAI key isn't configured, return null (no template text!)
+  // Note: This function will be used in the GitHub Actions script, not client-side
+  console.log("🤖 AI generation not available in client - using pre-processed data from Supabase");
+  return null;
 }
 
 // Define ProcessedArticle interface locally to avoid import issues
 export interface ProcessedArticle {
   id: string;
   title: string;
-  summary: string;
   sourceUrl: string;
+  publishedAt: string; // ISO string
   source: string;
+  rawContent: string;     // NEW: the plain text used for summarization
+  summary: string | null;
+  impact: string | null;
+  takeaways: string | null;
   author: string | null;
   authorDisplay: string; // New field for UI display
-  publishedAt: string;
   imageUrl: string | undefined;
   category: 'cybersecurity' | 'hacking' | 'general';
-  what: string;
-  impact: string;
-  takeaways: string;
-  whyThisMatters: string;
+  what: string | null;
+  whyThisMatters: string | null;
 }
 
 // NewsData.io API response types
@@ -169,6 +192,10 @@ export class UnifiedNewsService {
       }
       
       if (!response.ok) {
+        if (response.status === 422) {
+          console.warn(`NewsData.io validation error (422): Invalid request parameters or API quota exceeded`);
+          return [];
+        }
         throw new Error(`NewsData.io error: ${response.status} ${response.statusText}`);
       }
       
@@ -185,8 +212,8 @@ export class UnifiedNewsService {
       console.log(`Converted ${articles.length} articles from NewsData.io`);
       return articles;
       
-    } catch (error) {
-      console.warn('NewsData.io fetch failed:', error);
+    } catch (error: any) {
+      console.warn(`NewsData.io fetch failed with ${error?.response?.status || error}: ${JSON.stringify(error?.response?.data || {})}`);
       return [];
     }
   }
@@ -230,15 +257,26 @@ export class UnifiedNewsService {
       const rssPromises = RSS_FEEDS.map(feedUrl => this.fetchRSSFeed(feedUrl));
       const rssResults = await Promise.allSettled(rssPromises);
       
-      // Collect successful results
+      // Collect successful results and log skipped feeds
+      let skippedFeeds = 0;
       rssResults.forEach((result, index) => {
         if (result.status === 'fulfilled') {
-          console.log(`✅ RSS feed ${RSS_FEEDS[index]} returned ${result.value.length} articles`);
-          allRssArticles.push(...result.value);
+          if (result.value.length === 0) {
+            console.log(`⚠️ RSS feed ${RSS_FEEDS[index]} returned no articles (may be 404 or empty)`);
+            skippedFeeds++;
+          } else {
+            console.log(`✅ RSS feed ${RSS_FEEDS[index]} returned ${result.value.length} articles`);
+            allRssArticles.push(...result.value);
+          }
         } else {
           console.warn(`❌ RSS feed ${RSS_FEEDS[index]} failed:`, result.reason);
+          skippedFeeds++;
         }
       });
+      
+      if (skippedFeeds > 0) {
+        console.log(`📊 RSS Summary: ${skippedFeeds} feeds skipped, ${allRssArticles.length} articles collected`);
+      }
       
       console.log(`🔍 Total RSS articles collected: ${allRssArticles.length}`);
       return allRssArticles;
@@ -256,40 +294,43 @@ export class UnifiedNewsService {
     try {
       console.log(`🔍 Fetching RSS feed: ${feedUrl}`);
       
-      // Try multiple CORS proxies
-      const proxies = [
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl)}`,
-        `https://cors-anywhere.herokuapp.com/${feedUrl}`,
-        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(feedUrl)}`,
-        `https://corsproxy.io/?${encodeURIComponent(feedUrl)}`,
-        `https://thingproxy.freeboard.io/fetch/${feedUrl}`
-      ];
-      
+      // Try direct fetch first (works in Node.js/server-side)
       let xmlText = '';
-      let lastError = null;
       
-      for (const proxyUrl of proxies) {
-        try {
-          console.log(`🔍 Trying proxy: ${proxyUrl}`);
-          const response = await fetch(proxyUrl);
-          if (!response.ok) {
-            throw new Error(`RSS fetch failed: ${response.status}`);
+      try {
+        console.log(`🔍 Trying direct fetch: ${feedUrl}`);
+        const response = await fetch(feedUrl);
+        
+        if (!response.ok) {
+          if (response.status === 404) {
+            console.warn(`⚠️ RSS feed not found (404) for ${feedUrl}, skipping...`);
+            return [];
           }
-          
-          xmlText = await response.text();
-          console.log(`✅ RSS feed response length: ${xmlText.length} characters`);
-          console.log(`🔍 RSS feed preview: ${xmlText.substring(0, 200)}...`);
-          break; // Success, exit the loop
-          
-        } catch (error) {
-          console.warn(`❌ Proxy failed: ${proxyUrl}`, error);
-          lastError = error;
-          continue; // Try next proxy
+          if (response.status === 403) {
+            console.warn(`⚠️ Direct fetch blocked (403) for ${feedUrl}, trying Jina...`);
+            throw new Error(`Direct fetch blocked: ${response.status}`);
+          }
+          throw new Error(`RSS fetch failed: ${response.status}`);
         }
-      }
-      
-      if (!xmlText) {
-        throw lastError || new Error('All CORS proxies failed');
+        
+        xmlText = await response.text();
+        console.log(`✅ Direct fetch successful - RSS feed response length: ${xmlText.length} characters`);
+        console.log(`🔍 RSS feed preview: ${xmlText.substring(0, 200)}...`);
+        
+      } catch (directError) {
+        const errorMessage = directError instanceof Error ? directError.message : 'Unknown error';
+        console.warn(`❌ Direct fetch failed: ${errorMessage}`);
+        
+        // Try Jina Reader as fallback
+        try {
+          console.log(`🔍 Trying Jina Reader for RSS feed: ${feedUrl}`);
+          xmlText = await fetchReadableText(feedUrl);
+          console.log(`✅ Jina Reader successful - RSS feed response length: ${xmlText.length} characters`);
+        } catch (jinaError) {
+          const jinaErrorMessage = jinaError instanceof Error ? jinaError.message : 'Unknown error';
+          console.warn(`❌ Jina Reader failed: ${jinaErrorMessage}`);
+          throw new Error(`All fetch methods failed: ${errorMessage}, ${jinaErrorMessage}`);
+        }
       }
       
       const articles = await this.parseRSSFeed(xmlText, feedUrl);
@@ -298,7 +339,9 @@ export class UnifiedNewsService {
       return articles;
       
     } catch (error) {
-      console.warn(`❌ Failed to fetch RSS feed ${feedUrl}:`, error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.warn(`❌ Failed to fetch RSS feed ${feedUrl}:`, errorMessage);
+      // Don't throw - just return empty array to continue processing other feeds
       return [];
     }
   }
@@ -335,6 +378,32 @@ export class UnifiedNewsService {
         });
         
         if (title && link) {
+          // Extract raw content using the new helper
+          let body = getItemBody({ 
+            'content:encoded': this.extractXmlValue(itemXml, 'content:encoded'),
+            content: this.extractXmlValue(itemXml, 'content'),
+            description: description,
+            summary: this.extractXmlValue(itemXml, 'summary'),
+            contentSnippet: this.extractXmlValue(itemXml, 'contentSnippet')
+          });
+          
+          // If content is too short, try to fetch full article text
+          if (!body || body.length < 600) {
+            try {
+              console.log(`🔍 Content too short (${body.length} chars), fetching full article: ${link}`);
+              const fullText = await fetchReadableText(link);
+              if (fullText && fullText.length > body.length) {
+                body = fullText;
+                console.log(`✅ Fetched full article text: ${body.length} chars`);
+              }
+            } catch (error) {
+              console.warn(`⚠️ Failed to fetch full article text: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+          }
+          
+          // Trim to ~6000 chars to keep token usage sane
+          const promptBody = body.slice(0, 6000);
+          
           // Extract image URL from enclosure or description
           let imageUrl: string | undefined = undefined;
           if (enclosure) {
@@ -383,91 +452,31 @@ export class UnifiedNewsService {
             }
           } else {
             console.log(`❌ No RSS image found for: "${title}"`);
-            // Debug: let's see what's in the description
-            if (description) {
-              console.log(`🔍 Description contains: ${description.substring(0, 200)}...`);
-            }
           }
           
-          // Clean up description - remove HTML tags and use real content only
-          let cleanDescription = this.cleanText(description) || '';
-          
-          console.log(`🔍 RSS Article: "${title}"`);
-          console.log(`🔍 Original description: ${description ? description.substring(0, 100) + '...' : 'null'}`);
-          console.log(`🔍 Cleaned description: ${cleanDescription ? cleanDescription.substring(0, 100) + '...' : 'empty'}`);
-          
-          // Simplify with AI if we have enough content
-          if (cleanDescription && cleanDescription.length > 20) {
-            console.log(`🤖 Attempting AI simplification for RSS article: "${title}"`);
-            try {
-              cleanDescription = await this.simplifyWithAI(cleanDescription);
-              console.log(`✅ AI simplification successful for RSS article`);
-            } catch (error) {
-              console.error(`❌ AI simplification failed for RSS article:`, error);
-            }
-          } else {
-            console.log(`⚠️ Skipping AI simplification - description too short: ${cleanDescription ? cleanDescription.length : 0} chars`);
-          }
-          
-          // Don't truncate - let the UI handle display
-          // if (cleanDescription && cleanDescription.length > 200) {
-          //   cleanDescription = cleanDescription.substring(0, 200) + '...';
-          // }
-          
-          // If no description available, create a meaningful summary from the title
-          if (!cleanDescription || cleanDescription.length < 10) {
-            console.log(`⚠️ Description too short (${cleanDescription ? cleanDescription.length : 0} chars), creating summary from title`);
-            cleanDescription = `This article discusses ${title.toLowerCase()}. Stay informed about the latest developments in cybersecurity and technology.`;
-          }
-          
-          // Final safety check - ensure we never have empty summaries
-          if (!cleanDescription || cleanDescription.trim().length === 0) {
-            console.log(`🔄 Final safety check: creating fallback summary`);
-            cleanDescription = `Stay informed about the latest cybersecurity developments and best practices.`;
-          }
-          
-          // Simplify title with AI if it's too technical
-          let simplifiedTitle = this.cleanText(title);
-          if (simplifiedTitle.length > 50 && (simplifiedTitle.includes('vulnerability') || simplifiedTitle.includes('exploit') || simplifiedTitle.includes('malware'))) {
-            simplifiedTitle = await this.simplifyWithAI(simplifiedTitle);
-          }
-
-          // Generate content sections using AI or fallback templates
-          const sections = await this.generateArticleSections(simplifiedTitle, cleanDescription);
+          // Generate AI details using the new structured approach
+          const ai = await generateAiDetails(title, link, promptBody);
           
           // Create authorDisplay field: use author if available, otherwise use source
           const author = this.extractAuthorFromSource(this.getSourceName(feedUrl));
           let authorDisplay = author || this.getSourceName(feedUrl);
           
-          // If no author found, try AI extraction from content
-          if (!author && cleanDescription && cleanDescription.length > 100) {
-            try {
-              console.log('Using AI to extract author from RSS content...');
-              const aiAuthor = await this.extractAuthorWithAI(cleanDescription, simplifiedTitle);
-              if (aiAuthor) {
-                console.log('AI found RSS author:', aiAuthor);
-                authorDisplay = aiAuthor;
-              }
-            } catch (error) {
-              console.warn('AI author extraction failed for RSS:', error);
-            }
-          }
-          
           const article: ProcessedArticle = {
-            id: `rss-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            title: simplifiedTitle,
-            summary: cleanDescription,
+            id: '', // Let Supabase auto-generate the ID
+            title: this.cleanText(title),
             sourceUrl: link,
-            source: this.getSourceName(feedUrl),
-            author: author,
-            authorDisplay: authorDisplay, // New field for UI display
             publishedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
+            source: this.getSourceName(feedUrl),
+            rawContent: body,                             // store the text we used
+            summary: ai?.summary ?? null,                 // if null, leave null
+            impact: ai?.impact ?? null,
+            takeaways: ai?.takeaways?.join(" • ") ?? null, // if you store as text; else keep as array if DB supports jsonb
+            author: author,
+            authorDisplay: authorDisplay,
             imageUrl: imageUrl,
             category: this.determineCategory(title, description),
-            what: sections.what,
-            impact: sections.impact,
-            takeaways: sections.takeaways,
-            whyThisMatters: sections.whyThisMatters
+            what: ai?.whatHappened ?? null,
+            whyThisMatters: null // Not used in new structure
           };
           
           articles.push(article);
@@ -485,12 +494,12 @@ export class UnifiedNewsService {
           const firstItem = firstItemMatch[1];
           const title = this.extractXmlValue(firstItem, 'title') || 'Cybersecurity News Update';
           const link = this.extractXmlValue(firstItem, 'link') || 'https://example.com';
-          const description = this.extractXmlValue(firstItem, 'description') || 'Stay informed about the latest cybersecurity developments.';
+          const description = this.extractXmlValue(firstItem, 'description') || null;
           
           const cleanTitle = this.cleanText(title);
-          const cleanDesc = this.cleanText(description);
+          const cleanDesc = this.cleanText(description || '');
           
-          const fallbackSummary = cleanDesc || `This article discusses ${cleanTitle.toLowerCase()}. Stay informed about the latest developments in cybersecurity and technology.`;
+          const fallbackSummary = cleanDesc || '';
           const sections = await this.generateArticleSections(cleanTitle, fallbackSummary);
           
           // Create authorDisplay field for fallback article
@@ -498,20 +507,21 @@ export class UnifiedNewsService {
           const authorDisplay = author || this.getSourceName(feedUrl);
           
           const fallbackArticle: ProcessedArticle = {
-            id: `rss-fallback-${Date.now()}`,
+            id: '', // Let Supabase auto-generate the ID
             title: cleanTitle,
-            summary: fallbackSummary,
             sourceUrl: link,
-            source: this.getSourceName(feedUrl),
-            author: author,
-            authorDisplay: authorDisplay, // New field for UI display
             publishedAt: new Date().toISOString(),
+            source: this.getSourceName(feedUrl),
+            rawContent: fallbackSummary || '', // Use fallback summary as raw content
+            summary: null, // No AI summary available
+            impact: null,
+            takeaways: null,
+            author: author,
+            authorDisplay: authorDisplay,
             imageUrl: undefined,
-            category: this.determineCategory(title, description),
-            what: sections.what,
-            impact: sections.impact,
-            takeaways: sections.takeaways,
-            whyThisMatters: sections.whyThisMatters
+            category: this.determineCategory(title, description || ''),
+            what: null,
+            whyThisMatters: null
           };
           
           articles.push(fallbackArticle);
@@ -638,14 +648,14 @@ export class UnifiedNewsService {
         rewrittenContent = await this.simplifyWithAI(fullContent);
       }
     } else {
-      console.log(`⚠️ No sufficient content available, creating summary from title`);
-      rewrittenContent = `This article discusses ${article.title.toLowerCase()}. Stay informed about the latest developments in cybersecurity and technology.`;
+      console.log(`⚠️ No sufficient content available, returning empty string`);
+      rewrittenContent = '';
     }
     
-    // Final safety check - ensure we never have empty content
+    // Final safety check - if no content, return empty string
     if (!rewrittenContent || rewrittenContent.trim().length === 0) {
-      console.log(`🔄 Final safety check: creating fallback content`);
-      rewrittenContent = `Stay informed about the latest cybersecurity developments and best practices.`;
+      console.log(`🔄 Final safety check: no content available, returning empty string`);
+      rewrittenContent = '';
     }
     
     // Simplify title with AI if it's too technical
@@ -664,20 +674,21 @@ export class UnifiedNewsService {
     const authorDisplay = author || article.source_id;
 
     return {
-      id: `newsdata-${Date.now()}-${index}`,
+      id: '', // Let Supabase auto-generate the ID
       title: simplifiedTitle,
-      summary: rewrittenContent, // Use the full rewritten content as summary
       sourceUrl: article.link,
-      source: article.source_id,
-      author: author,
-      authorDisplay: authorDisplay, // New field for UI display
       publishedAt: article.pubDate,
+      source: article.source_id,
+      rawContent: fullContent, // Store the original content
+      summary: rewrittenContent || null, // Use the full rewritten content as summary or null
+      impact: sections.impact || null,
+      takeaways: sections.takeaways || null,
+      author: author,
+      authorDisplay: authorDisplay,
       imageUrl: imageUrl,
       category: this.determineCategory(article.title, article.description || ''),
-      what: sections.what,
-      impact: sections.impact,
-      takeaways: sections.takeaways,
-      whyThisMatters: sections.whyThisMatters
+      what: sections.what || null,
+      whyThisMatters: sections.whyThisMatters || null
     };
   }
 
@@ -729,39 +740,15 @@ export class UnifiedNewsService {
   }
 
   /**
-   * Use AI to extract author name from article content
+   * Extract author from content using simple regex patterns
+   * AI processing has been moved to GitHub Actions
    */
   private static async extractAuthorWithAI(content: string, title: string): Promise<string | null> {
-    try {
-      if (!client) {
-        console.warn("⚠️ OpenAI client not available for author extraction");
-        return null;
-      }
-      
-      const response = await client.chat.completions.create({
-        model: 'gpt-4o-mini',
-        temperature: 0.1,
-        max_tokens: 100,
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an assistant that extracts author names from news articles. Look for the actual journalist or writer name, not the publication name. Return only the author name, nothing else. If no clear author is found, return "null".'
-          },
-          {
-            role: 'user',
-            content: `Extract the author name from this article:\n\nTitle: ${title}\n\nContent: ${content.substring(0, 2000)}`
-          }
-        ]
-      });
-
-      const author = response.choices[0]?.message?.content?.trim();
-      if (author && author !== 'null' && author.length > 2 && author.length < 100) {
-        return author;
-      }
-    } catch (error) {
-      console.warn('AI author extraction failed:', error);
+    // Simple regex-based author extraction since AI processing moved to GitHub Actions
+    const authorMatch = content.match(/(?:by|author|written by|byline)[:\s]+([^<\n\r]+)/i);
+    if (authorMatch && authorMatch[1]) {
+      return this.cleanAuthorName(authorMatch[1]);
     }
-    
     return null;
   }
 
@@ -902,62 +889,27 @@ export class UnifiedNewsService {
   }
 
   /**
-   * Rewrite a single chunk with AI
+   * Simple text processing since AI processing moved to GitHub Actions
    */
   private static async rewriteChunk(chunk: string, index: number, total: number): Promise<string> {
-      if (!client) {
-        console.warn("⚠️ OpenAI client not available for chunk rewriting");
-        return chunk; // Return original chunk if AI not available
-      }
-      
-      const response = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      temperature: 0.3,
-      max_tokens: 2000, // generous so we don't cut mid-thought
-        messages: [
-          {
-          role: 'system', 
-          content: 'You rewrite cybersecurity articles in clear, non-technical language without losing meaning. Keep factual details; avoid jargon.' 
-        },
-        { 
-          role: 'user', 
-          content: `This is part ${index} of ${total} of an article. Rewrite this part clearly in plain English. Do NOT summarize; fully rewrite. Keep names, numbers, and facts accurate.\n\n${chunk}`
-        }
-      ]
-    });
-    return response.choices[0]?.message?.content?.trim() ?? chunk;
+    // Simple text cleaning since AI processing moved to GitHub Actions
+    return this.cleanText(chunk);
   }
 
   /**
-   * Rewrite entire article with chunked AI processing to prevent truncation
+   * Simple text processing since AI processing moved to GitHub Actions
    */
   private static async rewriteArticleWithAI(title: string, content: string): Promise<string> {
-    try {
-      console.log(`🤖 Rewriting article with chunked AI: "${title}"`);
-      
-      if (!content || content.trim().length === 0) {
-        return content;
-      }
-
-      const chunks = this.splitIntoChunks(content);
-      console.log(`📝 Split article into ${chunks.length} chunks`);
-      
-      const parts: string[] = [];
-      for (let i = 0; i < chunks.length; i++) {
-        console.log(`🤖 Processing chunk ${i + 1}/${chunks.length}`);
-        const rewrittenChunk = await this.rewriteChunk(chunks[i], i + 1, chunks.length);
-        parts.push(rewrittenChunk);
-      }
-      
-      // Join with double newlines to avoid mid-word merges
-      const result = parts.join('\n\n').replace(/\s+\n/g, '\n');
-      console.log(`✅ Article rewritten successfully (${result.length} chars)`);
-      return result;
-      
-    } catch (error) {
-      console.error(`❌ Article rewriting failed:`, error);
-      return content; // Return original content if AI fails
+    console.log(`📝 Processing article text: "${title}"`);
+    
+    if (!content || content.trim().length === 0) {
+      return content;
     }
+
+    // Simple text cleaning since AI processing moved to GitHub Actions
+    const cleanedContent = this.cleanText(content);
+    console.log(`✅ Article processed successfully (${cleanedContent.length} chars)`);
+    return cleanedContent;
   }
 
   /**
@@ -975,144 +927,36 @@ export class UnifiedNewsService {
   }
 
   /**
-   * Unified AI processing that generates both summary and sections in one call
+   * Process article data from Supabase - no AI processing, just return what's available
    */
-  private static async processArticleWithAI(articleContent: string): Promise<{
-    summary: string;
-    what: string;
-    impact: string;
-    takeaways: string;
-    whyThisMatters: string;
+  private static async processArticleWithAI(article: any): Promise<{
+    summary: string | null;
+    what: string | null;
+    impact: string | null;
+    takeaways: string | null;
+    whyThisMatters: string | null;
   }> {
-    if (!articleContent || articleContent.trim().length === 0) {
-      return {
-        summary: "No content available for this article.",
-        what: "What happened: No details available.",
-        impact: "Impact: Unable to determine the impact of this event.",
-        takeaways: "Key takeaways: Stay informed about cybersecurity developments.",
-        whyThisMatters: "Why this matters: Understanding cybersecurity helps protect your digital safety."
-      };
-    }
-
-    try {
-      console.log(`🤖 Processing article with unified AI: ${articleContent.substring(0, 100)}...`);
-      
-      // Check if OpenAI client is available
-      if (!client) {
-        console.warn("⚠️ OpenAI client not available, using fallback content");
-        throw new Error("OpenAI client not initialized - no API key provided");
-      }
-      
-      const response = await client.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `You are an assistant that rewrites and summarizes cybersecurity articles for a general audience.
-- Remove technical jargon and replace it with plain, everyday language.
-- Keep all important facts, names, dates, and numbers accurate.
-- Never cut off mid-word or mid-sentence.
-- Always end with a logical, complete thought.
-- Summaries must be coherent and self-contained, even if the original article is fragmented.
-- Do not use ellipses ("...") unless they are part of a quoted phrase.
-- Keep summaries concise (3–5 sentences), but ensure they cover the main points.
-- Structure your response clearly and logically.
-- After rewriting the summary, also generate these 4 short sections (1–2 sentences each):
-  1. What happened
-  2. Impact
-  3. Key takeaways
-  4. Why this matters
-
-Please respond in this exact JSON format:
-{
-  "summary": "Your rewritten summary here",
-  "what": "What happened: [Brief explanation]",
-  "impact": "Impact: [How this affects people/security]",
-  "takeaways": "Key takeaways: [Main points to remember]",
-  "whyThisMatters": "Why this matters: [Why people should care]"
-}`
-          },
-          {
-            role: "user",
-            content: `Rewrite and summarize this article in plain English, following the system rules above.
-Article content: ${articleContent}`
-          }
-        ],
-        temperature: 0.3,
-        max_tokens: 1500
-      });
-
-      const aiResponse = response.choices[0]?.message?.content?.trim();
-      if (!aiResponse) {
-        throw new Error("AI returned empty response");
-      }
-
-      console.log(`🤖 AI response received: ${aiResponse.substring(0, 200)}...`);
-
-      // Try to parse JSON response
-      try {
-        const parsed = JSON.parse(aiResponse);
-        const result = {
-          summary: parsed.summary || "Summary not available",
-          what: parsed.what || "What happened: Details not available",
-          impact: parsed.impact || "Impact: Unable to determine impact",
-          takeaways: parsed.takeaways || "Key takeaways: Stay informed about cybersecurity",
-          whyThisMatters: parsed.whyThisMatters || "Why this matters: Understanding cybersecurity helps protect your digital safety"
-        };
-        
-        console.log(`✅ AI processing complete - Summary: ${result.summary.substring(0, 100)}...`);
-        return result;
-      } catch (parseError) {
-        console.warn(`⚠️ JSON parsing failed, trying text parsing:`, parseError);
-        
-        // Fallback to text parsing if JSON fails
-        const summaryMatch = aiResponse.match(/summary["\s]*:["\s]*"([^"]+)"/i) || 
-                            aiResponse.match(/summary["\s]*:["\s]*([^,}]+)/i);
-        const whatMatch = aiResponse.match(/what["\s]*:["\s]*"([^"]+)"/i) || 
-                         aiResponse.match(/what["\s]*:["\s]*([^,}]+)/i);
-        const impactMatch = aiResponse.match(/impact["\s]*:["\s]*"([^"]+)"/i) || 
-                           aiResponse.match(/impact["\s]*:["\s]*([^,}]+)/i);
-        const takeawaysMatch = aiResponse.match(/takeaways["\s]*:["\s]*"([^"]+)"/i) || 
-                              aiResponse.match(/takeaways["\s]*:["\s]*([^,}]+)/i);
-        const whyMatch = aiResponse.match(/whyThisMatters["\s]*:["\s]*"([^"]+)"/i) || 
-                        aiResponse.match(/whyThisMatters["\s]*:["\s]*([^,}]+)/i);
-
-        return {
-          summary: summaryMatch ? summaryMatch[1].trim() : aiResponse.split('\n')[0] || "Summary not available",
-          what: whatMatch ? whatMatch[1].trim() : "What happened: Details not available",
-          impact: impactMatch ? impactMatch[1].trim() : "Impact: Unable to determine impact",
-          takeaways: takeawaysMatch ? takeawaysMatch[1].trim() : "Key takeaways: Stay informed about cybersecurity",
-          whyThisMatters: whyMatch ? whyMatch[1].trim() : "Why this matters: Understanding cybersecurity helps protect your digital safety"
-        };
-      }
-    } catch (err: any) {
-      console.error("❌ AI processing failed:", err);
-      console.log(`⚠️ Falling back to template content`);
-      
-      // Provide better fallback content based on the article
-      const truncatedContent = articleContent.length > 200 ? articleContent.substring(0, 200) + "..." : articleContent;
-      
-      return {
-        summary: `This article discusses ${truncatedContent.toLowerCase()}. Stay informed about the latest developments in cybersecurity and technology.`,
-        what: "What happened: Details not available due to processing error. Please check the full article for complete information.",
-        impact: "Impact: Unable to determine impact due to processing error. This may affect various stakeholders in the cybersecurity ecosystem.",
-        takeaways: "Key takeaways: Stay informed about cybersecurity developments and follow best practices for digital security.",
-        whyThisMatters: "Why this matters: Understanding cybersecurity helps protect your digital safety and personal information."
-      };
-    }
+    // Simply return the data from Supabase without any fallback text
+    return {
+      summary: article.summary || null,
+      what: article.what || null,
+      impact: article.impact || null,
+      takeaways: article.takeaways || null,
+      whyThisMatters: article.why_this_matters || null
+    };
   }
 
   /**
-   * Simplify text using OpenAI ChatGPT API (legacy method - now uses unified processing)
+   * Simple text processing since AI processing moved to GitHub Actions
    */
   private static async simplifyWithAI(text: string): Promise<string> {
     if (!text || text.trim().length === 0) return "";
 
     try {
-      const result = await this.processArticleWithAI(text);
-      return result.summary;
+      const result = await this.processArticleWithAI({ summary: text, what: null, impact: null, takeaways: null, why_this_matters: null });
+      return result.summary || text;
     } catch (err: any) {
-      console.error("❌ AI simplification failed:", err);
+      console.error("❌ Text processing failed:", err);
       return text; // fallback to original
     }
   }
@@ -1134,46 +978,37 @@ Article content: ${articleContent}`
     try {
       // Use unified AI processing
       console.log(`🤖 Using unified AI processing for sections...`);
-      const result = await this.processArticleWithAI(content);
+      const result = await this.processArticleWithAI({ summary, what: null, impact: null, takeaways: null, why_this_matters: null });
       
         console.log(`✅ AI generated sections successfully:`, {
-        what: result.what.substring(0, 50) + '...',
-        impact: result.impact.substring(0, 50) + '...',
-        takeaways: result.takeaways.substring(0, 50) + '...',
-        whyThisMatters: result.whyThisMatters.substring(0, 50) + '...'
+        what: result.what ? result.what.substring(0, 50) + '...' : 'null',
+        impact: result.impact ? result.impact.substring(0, 50) + '...' : 'null',
+        takeaways: result.takeaways ? result.takeaways.substring(0, 50) + '...' : 'null',
+        whyThisMatters: result.whyThisMatters ? result.whyThisMatters.substring(0, 50) + '...' : 'null'
       });
       
       return {
-        what: result.what,
-        impact: result.impact,
-        takeaways: result.takeaways,
-        whyThisMatters: result.whyThisMatters
+        what: result.what || '',
+        impact: result.impact || '',
+        takeaways: result.takeaways || '',
+        whyThisMatters: result.whyThisMatters || ''
       };
     } catch (error) {
       console.warn(`❌ AI section generation failed:`, error);
     }
     
-    // Fallback to templates
-    console.log(`🔄 Using fallback templates for sections`);
-    const fallbackSections = {
-      what: `What happened: ${title}`,
-      impact: `Impact: This event affects cybersecurity awareness and best practices.`,
-      takeaways: `Key takeaways: Stay informed, follow best practices, and monitor new threats.`,
-      whyThisMatters: `Why this matters: Understanding these events helps protect your digital safety.`
+    // Return empty strings for all fields if AI generation failed
+    console.log(`🔄 AI generation failed, returning empty strings for all fields`);
+    return {
+      what: '',
+      impact: '',
+      takeaways: '',
+      whyThisMatters: ''
     };
-    
-    console.log(`📋 Fallback sections created:`, {
-      what: fallbackSections.what.substring(0, 50) + '...',
-      impact: fallbackSections.impact.substring(0, 50) + '...',
-      takeaways: fallbackSections.takeaways.substring(0, 50) + '...',
-      whyThisMatters: fallbackSections.whyThisMatters.substring(0, 50) + '...'
-    });
-    
-    return fallbackSections;
   }
 
   /**
-   * Generate sections using AI
+   * Generate sections using simple templates since AI processing moved to GitHub Actions
    */
   private static async generateSectionsWithAI(content: string): Promise<{
     what: string;
@@ -1182,58 +1017,13 @@ Article content: ${articleContent}`
     whyThisMatters: string;
   } | null> {
     try {
-      if (!client) {
-        console.warn("⚠️ OpenAI client not available for section generation");
-        return null;
-      }
+      console.log(`📝 Generating sections for content: ${content.substring(0, 100)}...`);
       
-      const response = await client.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: "You are a cybersecurity expert who creates clear, simple explanations. For each article, provide exactly 4 sections in this format:\n\nWhat happened: [Brief explanation of the event]\nImpact: [How this affects people/security]\nKey takeaways: [Main points to remember]\nWhy this matters: [Why people should care about this]\n\nKeep each section concise (1-2 sentences) and easy to understand."
-          },
-          {
-            role: "user",
-            content: `Create sections for this cybersecurity article: ${content}`
-          }
-        ],
-        temperature: 0.5,
-        max_tokens: 400
-      });
-
-      const aiContent = response.choices[0]?.message?.content?.trim();
-      if (!aiContent) {
-        console.log(`❌ AI returned empty content`);
-        return null;
-      }
-
-      console.log(`🤖 AI generated content:`, aiContent.substring(0, 200) + '...');
-
-      // Parse the AI response
-      const whatMatch = aiContent.match(/What happened:\s*(.+?)(?=\n|$)/i);
-      const impactMatch = aiContent.match(/Impact:\s*(.+?)(?=\n|$)/i);
-      const takeawaysMatch = aiContent.match(/Key takeaways:\s*(.+?)(?=\n|$)/i);
-      const whyMatch = aiContent.match(/Why this matters:\s*(.+?)(?=\n|$)/i);
-
-      const parsedSections = {
-        what: whatMatch ? whatMatch[1].trim() : `What happened: ${content.split('.')[0]}`,
-        impact: impactMatch ? impactMatch[1].trim() : `Impact: This event affects cybersecurity awareness and best practices.`,
-        takeaways: takeawaysMatch ? takeawaysMatch[1].trim() : `Key takeaways: Stay informed, follow best practices, and monitor new threats.`,
-        whyThisMatters: whyMatch ? whyMatch[1].trim() : `Why this matters: Understanding these events helps protect your digital safety.`
-      };
-
-      console.log(`✅ AI sections parsed successfully:`, {
-        what: parsedSections.what.substring(0, 50) + '...',
-        impact: parsedSections.impact.substring(0, 50) + '...',
-        takeaways: parsedSections.takeaways.substring(0, 50) + '...',
-        whyThisMatters: parsedSections.whyThisMatters.substring(0, 50) + '...'
-      });
-
-      return parsedSections;
+      // Return null since AI processing moved to GitHub Actions
+      console.log(`🔄 AI processing moved to GitHub Actions, returning null for all fields`);
+      return null;
     } catch (error) {
-      console.error("AI section generation failed:", error);
+      console.error("Section generation failed:", error);
       return null;
     }
   }
@@ -1242,139 +1032,10 @@ Article content: ${articleContent}`
    * Generate fallback content when external sources fail
    */
   private static async generateFallbackContent(category: 'cybersecurity' | 'hacking' | 'general'): Promise<ProcessedArticle[]> {
-    console.log(`🔄 Generating fallback content for category: ${category}`);
+    console.log(`🔄 No fallback content generated - returning empty array for category: ${category}`);
     
-    // Generate 64 articles with varied content
-    const fallbackArticles = [];
-    const baseArticles = [
-      {
-        title: 'Cybersecurity Best Practices for 2024',
-        summary: 'Essential security tips to protect your digital life. Learn about password management, two-factor authentication, and staying safe online.',
-        sourceUrl: 'https://www.cisa.gov/be-cyber-smart',
-        source: 'CISA',
-        author: null,
-        authorDisplay: 'CISA',
-        imageUrl: 'https://images.unsplash.com/photo-1555949963-aa79dcee981c?w=800&h=400&fit=crop&crop=center',
-        what: 'What happened: Cybersecurity threats are constantly evolving, and it\'s important to stay updated with the latest security practices.',
-        impact: 'Impact: Following these practices helps protect your personal data and prevents cyber attacks.',
-        takeaways: 'Key takeaways: Use strong passwords, enable two-factor authentication, and stay informed about security threats.',
-        whyThisMatters: 'Understanding cybersecurity helps you stay safe online and protect your valuable information.'
-      },
-      {
-        title: 'How to Protect Your Personal Data Online',
-        summary: 'Simple steps to safeguard your personal information from cyber threats. Discover essential privacy tools and techniques.',
-        sourceUrl: 'https://www.consumer.ftc.gov/articles',
-        source: 'FTC',
-        author: null,
-        authorDisplay: 'FTC',
-        imageUrl: 'https://images.unsplash.com/photo-1563013544-824ae1b704d3?w=800&h=400&fit=crop&crop=center',
-        what: 'What happened: Personal data protection is more important than ever as cyber threats continue to increase.',
-        impact: 'Impact: Protecting your data prevents identity theft and keeps your personal information secure.',
-        takeaways: 'Key takeaways: Be careful with what you share online, use privacy settings, and monitor your accounts regularly.',
-        whyThisMatters: 'Your personal data is valuable to cybercriminals, so protecting it is essential for your safety.'
-      },
-      {
-        title: 'Understanding Phishing Attacks',
-        summary: 'Learn how to identify and avoid phishing attempts that target your accounts. Stay one step ahead of cybercriminals.',
-        sourceUrl: 'https://krebsonsecurity.com',
-        source: 'KrebsOnSecurity',
-        author: null,
-        authorDisplay: 'KrebsOnSecurity',
-        imageUrl: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=800&h=400&fit=crop&crop=center',
-        what: 'What happened: Phishing attacks are becoming more sophisticated and targeting more people than ever before.',
-        impact: 'Impact: Falling for phishing attacks can lead to stolen passwords, financial loss, and identity theft.',
-        takeaways: 'Key takeaways: Never click suspicious links, verify sender identities, and report suspicious emails.',
-        whyThisMatters: 'Phishing is one of the most common cyber threats, so knowing how to spot it is crucial.'
-      },
-      {
-        title: 'Ransomware Protection Strategies',
-        summary: 'Comprehensive guide to protecting your systems from ransomware attacks. Learn prevention techniques and recovery methods.',
-        sourceUrl: 'https://www.nist.gov/cyberframework',
-        source: 'NIST',
-        author: null,
-        authorDisplay: 'NIST',
-        imageUrl: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&h=400&fit=crop&crop=center',
-        what: 'What happened: Ransomware attacks have increased dramatically, targeting businesses and individuals worldwide.',
-        impact: 'Impact: Ransomware can encrypt your files and demand payment, causing significant financial and data loss.',
-        takeaways: 'Key takeaways: Keep backups, update software regularly, and never pay ransom demands.',
-        whyThisMatters: 'Ransomware can destroy your data and cost thousands of dollars in recovery efforts.'
-      },
-      {
-        title: 'Secure Password Management',
-        summary: 'Best practices for creating and managing strong passwords. Learn about password managers and multi-factor authentication.',
-        sourceUrl: 'https://www.haveibeenpwned.com',
-        source: 'HaveIBeenPwned',
-        author: null,
-        authorDisplay: 'HaveIBeenPwned',
-        imageUrl: 'https://images.unsplash.com/photo-1596462502278-27bfdc403348?w=800&h=400&fit=crop&crop=center',
-        what: 'What happened: Weak passwords are the leading cause of security breaches and account compromises.',
-        impact: 'Impact: Strong passwords protect your accounts from unauthorized access and data theft.',
-        takeaways: 'Key takeaways: Use unique passwords, enable 2FA, and check if your accounts have been compromised.',
-        whyThisMatters: 'Your passwords are the first line of defense against cyber attacks.'
-      }
-    ];
-
-    // Generate 64 articles by cycling through base articles and adding variations
-    for (let i = 0; i < 64; i++) {
-      const baseArticle = baseArticles[i % baseArticles.length];
-      const timeOffset = i * 60 * 60 * 1000; // 1 hour apart
-      
-      fallbackArticles.push({
-        id: `fallback-${Date.now()}-${i + 1}`,
-        title: `${baseArticle.title} ${i > 4 ? `- Part ${Math.floor(i / 5) + 1}` : ''}`,
-        summary: baseArticle.summary,
-        sourceUrl: baseArticle.sourceUrl,
-        source: baseArticle.source,
-        author: baseArticle.author,
-        authorDisplay: baseArticle.authorDisplay,
-        publishedAt: new Date(Date.now() - timeOffset).toISOString(),
-        imageUrl: baseArticle.imageUrl,
-        category: category,
-        what: baseArticle.what,
-        impact: baseArticle.impact,
-        takeaways: baseArticle.takeaways,
-        whyThisMatters: baseArticle.whyThisMatters
-      });
-    }
-
-    // Process fallback articles with AI simplification
-    const processedArticles = await Promise.all(
-      fallbackArticles.map(async (article) => {
-        try {
-          // Generate sections for each fallback article
-          const sections = await this.generateArticleSections(article.title, article.summary);
-          
-          // Simplify summary with AI
-          const simplifiedSummary = await this.simplifyWithAI(article.summary);
-          
-          const processedArticle = {
-            ...article,
-            summary: simplifiedSummary,
-            what: sections.what,
-            impact: sections.impact,
-            takeaways: sections.takeaways,
-            whyThisMatters: sections.whyThisMatters
-          };
-          
-          console.log(`🔍 Processed fallback article:`, {
-            title: processedArticle.title,
-            summary: processedArticle.summary.substring(0, 50) + '...',
-            what: processedArticle.what.substring(0, 50) + '...',
-            impact: processedArticle.impact.substring(0, 50) + '...',
-            takeaways: processedArticle.takeaways.substring(0, 50) + '...',
-            whyThisMatters: processedArticle.whyThisMatters.substring(0, 50) + '...'
-          });
-          
-          return processedArticle;
-        } catch (error) {
-          console.error('Failed to process fallback article:', error);
-          return article;
-        }
-      })
-    );
-
-    console.log(`✅ Generated ${processedArticles.length} fallback articles with full content`);
-    return processedArticles;
+    // Return empty array instead of hardcoded content
+    return [];
   }
 
   /**

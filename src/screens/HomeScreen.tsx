@@ -158,7 +158,7 @@ export function HomeScreen() {
     const query = searchQuery.toLowerCase();
     return recentArticles.filter(article => 
       article.title.toLowerCase().includes(query) ||
-      article.summary.toLowerCase().includes(query) ||
+      (article.summary && article.summary.toLowerCase().includes(query)) ||
       article.category.toLowerCase().includes(query)
     );
   }, [searchQuery, recentArticles]);

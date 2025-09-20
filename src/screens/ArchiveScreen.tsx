@@ -152,7 +152,7 @@ export function ArchiveScreen() {
     const query = searchQuery.toLowerCase();
     return archivedArticles.filter(article => 
       article.title.toLowerCase().includes(query) ||
-      article.summary.toLowerCase().includes(query) ||
+      (article.summary && article.summary.toLowerCase().includes(query)) ||
       article.category.toLowerCase().includes(query)
     );
   }, [searchQuery, archivedArticles]);

@@ -2,6 +2,7 @@ import { supabase } from './supabaseClient';
 import { Database } from './supabaseClient';
 import { TABLES, RPC_FUNCTIONS } from '../constants/supabaseConfig';
 import { ProcessedArticle } from './newsService';
+import { v4 as uuidv4 } from 'uuid';
 
 type Article = Database['public']['Tables']['articles']['Row'];
 type ArticleInsert = Database['public']['Tables']['articles']['Insert'];
@@ -48,40 +49,77 @@ export class SupabaseArticleService {
    */
   public async storeArticles(articles: ProcessedArticle[]): Promise<{ success: boolean; error?: string; storedCount: number }> {
     try {
-      const articleInserts: ArticleInsert[] = articles.map(article => ({
-        id: article.id,
-        title: article.title,
-        summary: article.summary,
-        content: null, // ProcessedArticle doesn't have content property
-        source_url: article.sourceUrl,
-        source: article.source,
-        author: article.author,
-        published_at: article.publishedAt,
-        image_url: article.imageUrl,
-        category: article.category,
-        what: article.what,
-        impact: article.impact,
-        takeaways: article.takeaways,
-        why_this_matters: article.whyThisMatters,
-        ai_summary_generated: !!(article.what && article.impact && article.takeaways),
-      }));
+      const articleInserts: ArticleInsert[] = articles.map((article, index) => {
+        // Validate required fields
+        const missingFields = [];
+        if (!article.title) missingFields.push('title');
+        if (!article.sourceUrl) missingFields.push('sourceUrl');
+        if (!article.publishedAt) missingFields.push('publishedAt');
+        if (!article.source) missingFields.push('source');
+        
+        if (missingFields.length > 0) {
+          console.error(`❌ Article ${index + 1} missing required fields: ${missingFields.join(', ')}`);
+          console.error(`   Article data:`, {
+            title: article.title,
+            sourceUrl: article.sourceUrl,
+            publishedAt: article.publishedAt,
+            source: article.source
+          });
+        }
+
+        // Only include the fields we want to insert (let Supabase auto-generate ID)
+        return {
+          id: uuidv4(), // Generate a UUID for the insert
+          title: article.title,
+          source_url: article.sourceUrl,
+          published_at: article.publishedAt,
+          source: article.source,
+          content: article.rawContent || null,
+          summary: article.summary || null,
+          what: article.what || null,
+          impact: article.impact || null,
+          takeaways: article.takeaways || null,
+          why_this_matters: article.whyThisMatters || null,
+          image_url: article.imageUrl || null,
+          category: article.category || 'general',
+          author: article.author || null,
+          ai_summary_generated: !!(article.summary && article.what && article.impact && article.takeaways && article.whyThisMatters)
+        };
+      });
+
+      // Filter out articles with missing required fields
+      const validArticles = articleInserts.filter(article => 
+        article.title && article.source_url && article.published_at && article.source
+      );
+
+      if (validArticles.length === 0) {
+        console.error('❌ No valid articles to store - all articles missing required fields');
+        return { success: false, error: 'No valid articles to store', storedCount: 0 };
+      }
+
+      if (validArticles.length < articles.length) {
+        console.warn(`⚠️ Filtered out ${articles.length - validArticles.length} articles with missing required fields`);
+      }
 
       const { data, error } = await supabase
         .from(TABLES.ARTICLES)
-        .upsert(articleInserts, { 
-          onConflict: 'id',
-          ignoreDuplicates: false 
-        });
+        .insert(validArticles);
 
       if (error) {
-        console.error('Error storing articles:', error);
+        console.error('❌ Error storing articles:', error);
+        console.error('   Error details:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
         return { success: false, error: error.message, storedCount: 0 };
       }
 
-      console.log(`Successfully stored ${articles.length} articles`);
-      return { success: true, storedCount: articles.length };
+      console.log(`✅ Successfully stored ${validArticles.length} articles`);
+      return { success: true, storedCount: validArticles.length };
     } catch (error) {
-      console.error('Error storing articles:', error);
+      console.error('❌ Unexpected error storing articles:', error);
       return { success: false, error: 'An unexpected error occurred', storedCount: 0 };
     }
   }

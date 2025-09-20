@@ -54,27 +54,27 @@ export function CategoriesScreen() {
       const securityCount = state.articles.filter(article => 
         article.category === 'cybersecurity' && 
         (article.title.toLowerCase().includes('security') || 
-         article.summary.toLowerCase().includes('security') ||
+         (article.summary && article.summary.toLowerCase().includes('security')) ||
          article.title.toLowerCase().includes('protection') ||
-         article.summary.toLowerCase().includes('protection'))
+         (article.summary && article.summary.toLowerCase().includes('protection')))
       ).length;
 
       const breachesCount = state.articles.filter(article => 
         article.title.toLowerCase().includes('breach') || 
-        article.summary.toLowerCase().includes('breach') ||
+        (article.summary && article.summary.toLowerCase().includes('breach')) ||
         article.title.toLowerCase().includes('attack') ||
-        article.summary.toLowerCase().includes('attack') ||
+        (article.summary && article.summary.toLowerCase().includes('attack')) ||
         article.title.toLowerCase().includes('hack') ||
-        article.summary.toLowerCase().includes('hack')
+        (article.summary && article.summary.toLowerCase().includes('hack'))
       ).length;
 
       const scamsCount = state.articles.filter(article => 
         article.title.toLowerCase().includes('scam') || 
-        article.summary.toLowerCase().includes('scam') ||
+        (article.summary && article.summary.toLowerCase().includes('scam')) ||
         article.title.toLowerCase().includes('phish') ||
-        article.summary.toLowerCase().includes('phish') ||
+        (article.summary && article.summary.toLowerCase().includes('phish')) ||
         article.title.toLowerCase().includes('fraud') ||
-        article.summary.toLowerCase().includes('fraud')
+        (article.summary && article.summary.toLowerCase().includes('fraud'))
       ).length;
 
       // Count articles by actual category

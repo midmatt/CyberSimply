@@ -300,7 +300,7 @@ Consider:
       issues.push('Content complexity doesn\'t match title expectations');
     }
 
-    if (analysis.riskLevel === 'high' && !article.takeaways.toLowerCase().includes('action')) {
+    if (analysis.riskLevel === 'high' && article.takeaways && !article.takeaways.toLowerCase().includes('action')) {
       issues.push('High-risk content lacks actionable advice');
     }
 
@@ -356,13 +356,14 @@ Consider:
       suggestions.push('Balance negative information with positive solutions or preventive measures');
     }
 
-    if (analysis.actionability < 70) {
-      suggestions.push('Include more specific, actionable steps readers can take');
-    }
+    // Note: actionability and readability scoring would require additional analysis
+    // if (analysis.actionability < 70) {
+    //   suggestions.push('Include more specific, actionable steps readers can take');
+    // }
 
-    if (analysis.readability < 70) {
-      suggestions.push('Improve clarity and structure of the content');
-    }
+    // if (analysis.readability < 70) {
+    //   suggestions.push('Improve clarity and structure of the content');
+    // }
 
     return suggestions;
   }

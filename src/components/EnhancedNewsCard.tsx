@@ -325,34 +325,40 @@ export const EnhancedNewsCard = memo(({
 
         <View style={styles.content}>
           <ExpandableSummary
-            text={formatTextForDisplay(article.summary)}
+            text={formatTextForDisplay(article.summary || '')}
             maxLines={3}
             textStyle={styles.summary}
           />
 
-          <View style={styles.expandableSection}>
-            <Text style={styles.sectionTitle}>What Happened</Text>
-            <ExpandableSummary
-              text={formatTextForDisplay(article.what)}
-              maxLines={3}
-            />
-          </View>
+          {article.what && (
+            <View style={styles.expandableSection}>
+              <Text style={styles.sectionTitle}>What Happened</Text>
+              <ExpandableSummary
+                text={formatTextForDisplay(article.what)}
+                maxLines={3}
+              />
+            </View>
+          )}
 
-          <View style={styles.expandableSection}>
-            <Text style={styles.sectionTitle}>Why It Matters</Text>
-            <ExpandableSummary
-              text={formatTextForDisplay(article.impact)}
-              maxLines={3}
-            />
-          </View>
+          {article.impact && (
+            <View style={styles.expandableSection}>
+              <Text style={styles.sectionTitle}>Why It Matters</Text>
+              <ExpandableSummary
+                text={formatTextForDisplay(article.impact)}
+                maxLines={3}
+              />
+            </View>
+          )}
 
-          <View style={styles.expandableSection}>
-            <Text style={styles.sectionTitle}>What You Can Do</Text>
-            <ExpandableSummary
-              text={formatTextForDisplay(article.takeaways)}
-              maxLines={3}
-            />
-          </View>
+          {article.takeaways && (
+            <View style={styles.expandableSection}>
+              <Text style={styles.sectionTitle}>What You Can Do</Text>
+              <ExpandableSummary
+                text={formatTextForDisplay(article.takeaways)}
+                maxLines={3}
+              />
+            </View>
+          )}
 
           {showQualityScore && qualityScore && (
             <View style={styles.qualityScoreContainer}>

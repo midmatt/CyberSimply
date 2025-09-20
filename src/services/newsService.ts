@@ -14,18 +14,19 @@ export interface NewsItem {
 export interface ProcessedArticle {
   id: string;
   title: string;
-  summary: string;
   sourceUrl: string;
+  publishedAt: string; // ISO string
   source: string;
+  rawContent: string;     // NEW: the plain text used for summarization
+  summary: string | null;
+  impact: string | null;
+  takeaways: string | null;
   author: string | null;
   authorDisplay: string; // New field for UI display
-  publishedAt: string;
   imageUrl: string | null;
   category: 'cybersecurity' | 'hacking' | 'general';
-  what: string;
-  impact: string;
-  takeaways: string;
-  whyThisMatters: string;
+  what: string | null;
+  whyThisMatters: string | null;
 }
 
 export interface NewsResponse {

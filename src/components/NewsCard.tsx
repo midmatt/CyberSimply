@@ -220,7 +220,7 @@ export const NewsCard = memo(({ article, onPress, onToggleFavorite, isFavorite }
       </Text>
 
       <ExpandableSummary 
-        text={formatTextForDisplay(article.summary)}
+        text={formatTextForDisplay(article.summary || '')}
         maxLines={3}
         textStyle={styles.summary}
       />

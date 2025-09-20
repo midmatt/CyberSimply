@@ -262,7 +262,7 @@ Article Summary: ${article.summary}`;
   private static createFallbackSummary(article: ProcessedArticle): AISummary {
     // Create a more intelligent fallback based on the article content
     const title = article.title.toLowerCase();
-    const summary = article.summary.toLowerCase();
+    const summary = article.summary ? article.summary.toLowerCase() : '';
     const category = article.category.toLowerCase();
     
     let summaryText = '';

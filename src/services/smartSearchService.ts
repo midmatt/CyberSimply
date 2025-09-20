@@ -107,18 +107,20 @@ export class SmartSearchService {
       }
 
       // Check summary matches
-      const summaryLower = article.summary.toLowerCase();
-      for (const word of queryWords) {
-        if (summaryLower.includes(word)) {
-          relevanceScore += 2;
-          if (!matchedTerms.includes(word)) {
-            matchedTerms.push(word);
+      if (article.summary) {
+        const summaryLower = article.summary.toLowerCase();
+        for (const word of queryWords) {
+          if (summaryLower.includes(word)) {
+            relevanceScore += 2;
+            if (!matchedTerms.includes(word)) {
+              matchedTerms.push(word);
+            }
           }
         }
       }
 
       // Check content matches
-      const contentLower = (article.what + ' ' + article.impact + ' ' + article.takeaways).toLowerCase();
+      const contentLower = ((article.what || '') + ' ' + (article.impact || '') + ' ' + (article.takeaways || '')).toLowerCase();
       for (const word of queryWords) {
         if (contentLower.includes(word)) {
           relevanceScore += 1;
@@ -299,8 +301,8 @@ Format as a simple list, one suggestion per line.`;
       }
 
       return content.split('\n')
-        .map(suggestion => suggestion.trim())
-        .filter(suggestion => suggestion.length > 0)
+        .map((suggestion: string) => suggestion.trim())
+        .filter((suggestion: string) => suggestion.length > 0)
         .slice(0, 5);
 
     } catch (error) {
@@ -355,8 +357,8 @@ Format as a simple list, one topic per line.`;
       }
 
       return content.split('\n')
-        .map(topic => topic.trim())
-        .filter(topic => topic.length > 0)
+        .map((topic: string) => topic.trim())
+        .filter((topic: string) => topic.length > 0)
         .slice(0, 5);
 
     } catch (error) {
@@ -413,8 +415,8 @@ Format as a simple list, one term per line.`;
       }
 
       const terms = content.split('\n')
-        .map(term => term.trim())
-        .filter(term => term.length > 0)
+        .map((term: string) => term.trim())
+        .filter((term: string) => term.length > 0)
         .slice(0, 10);
 
       return { terms, success: true };
