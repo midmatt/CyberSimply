@@ -70,6 +70,8 @@ async function generateAiDetails(articleContent) {
   if (!openai) return null;
 
   try {
+    console.log("📝 Using response_format: json_object");
+    
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -101,7 +103,7 @@ Article content:
 Return ONLY the JSON object, no other text.`
         }
       ],
-      response_format: { type: "json" },
+      response_format: { type: "json_object" },
       temperature: 0.2
     });
 
