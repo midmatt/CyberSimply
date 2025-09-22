@@ -140,10 +140,29 @@ export class SupabaseArticleService {
       } = filters;
 
       let query = supabase
-        .from(TABLES.ARTICLES)
+        .from('article_details')
         .select(`
-          *,
-          article_metrics!left(views, favorites, shares, avg_read_time)
+          id,
+          title,
+          author,
+          source,
+          source_url,
+          published_at,
+          image_url,
+          summary,
+          what,
+          impact,
+          takeaways,
+          why_this_matters,
+          category,
+          content,
+          ai_summary_generated,
+          created_at,
+          updated_at,
+          view_count,
+          favorite_count,
+          share_count,
+          avg_read_time
         `, { count: 'exact' })
         .not('summary', 'is', null)
         .not('what', 'is', null)
@@ -204,10 +223,29 @@ export class SupabaseArticleService {
   public async getArticleById(articleId: string): Promise<{ success: boolean; data?: ArticleDetails; error?: string }> {
     try {
       const { data, error } = await supabase
-        .from(TABLES.ARTICLES)
+        .from('article_details')
         .select(`
-          *,
-          article_metrics!left(views, favorites, shares, avg_read_time)
+          id,
+          title,
+          author,
+          source,
+          source_url,
+          published_at,
+          image_url,
+          summary,
+          what,
+          impact,
+          takeaways,
+          why_this_matters,
+          category,
+          content,
+          ai_summary_generated,
+          created_at,
+          updated_at,
+          view_count,
+          favorite_count,
+          share_count,
+          avg_read_time
         `)
         .eq('id', articleId)
         .not('summary', 'is', null)
@@ -242,10 +280,29 @@ export class SupabaseArticleService {
   public async getTrendingArticles(limit: number = 10): Promise<{ success: boolean; data?: ArticleDetails[]; error?: string }> {
     try {
       const { data, error } = await supabase
-        .from(TABLES.ARTICLES)
+        .from('article_details')
         .select(`
-          *,
-          article_metrics!left(views, favorites, shares, avg_read_time)
+          id,
+          title,
+          author,
+          source,
+          source_url,
+          published_at,
+          image_url,
+          summary,
+          what,
+          impact,
+          takeaways,
+          why_this_matters,
+          category,
+          content,
+          ai_summary_generated,
+          created_at,
+          updated_at,
+          view_count,
+          favorite_count,
+          share_count,
+          avg_read_time
         `)
         .not('summary', 'is', null)
         .not('what', 'is', null)
@@ -283,10 +340,29 @@ export class SupabaseArticleService {
 
       // Get articles from preferred categories
       const { data, error } = await supabase
-        .from(TABLES.ARTICLES)
+        .from('article_details')
         .select(`
-          *,
-          article_metrics!left(views, favorites, shares, avg_read_time)
+          id,
+          title,
+          author,
+          source,
+          source_url,
+          published_at,
+          image_url,
+          summary,
+          what,
+          impact,
+          takeaways,
+          why_this_matters,
+          category,
+          content,
+          ai_summary_generated,
+          created_at,
+          updated_at,
+          view_count,
+          favorite_count,
+          share_count,
+          avg_read_time
         `)
         .in('category', preferredCategories)
         .not('summary', 'is', null)
