@@ -92,48 +92,6 @@ jobs:
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }} # noqa
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }} # noqa
 
-      # 👇 New step to run SQL migration to backfill article summaries
-      - name: Run SQL migration to backfill article summaries
-        run: |
-          # Create a Node.js script to execute SQL via Supabase REST API
-          cat > backfill-script.js << 'EOF'
-          const { createClient } = require('@supabase/supabase-js');
-          
-          const supabaseUrl = process.env.SUPABASE_URL;
-          const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-          
-          if (!supabaseUrl || !supabaseServiceKey) {
-            console.error('Missing required Supabase environment variables');
-            process.exit(1);
-          }
-          
-          const supabase = createClient(supabaseUrl, supabaseServiceKey);
-          
-          async function backfillArticles() {
-            try {
-              // Update articles that have a summary but missing AI-generated fields
-              const { data, error } = await supabase.rpc('backfill_article_summaries');
-              
-              if (error) {
-                console.error('Error running backfill:', error);
-                process.exit(1);
-              }
-              
-              console.log('Backfill completed successfully:', data);
-            } catch (err) {
-              console.error('Unexpected error:', err);
-              process.exit(1);
-            }
-          }
-          
-          backfillArticles();
-          EOF
-          
-          node backfill-script.js
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }} # noqa
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }} # noqa
-
       # 👇 Test step to verify article summary fields are populated
       - name: Test Article Summary Fields
         if: ${{ secrets.SUPABASE_PROJECT_REF != '' && secrets.SUPABASE_ACCESS_TOKEN != '' }}

@@ -31,7 +31,7 @@ jobs:
           curl -fsSL https://supabase.com/install.sh | sh
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           
-      - name: Run SQL migration to backfill article summaries
+      - name: Test Article Summary Fields
         if: ${{ secrets.SUPABASE_PROJECT_REF != '' && secrets.SUPABASE_ACCESS_TOKEN != '' }}
         run: |
           # Login to Supabase
@@ -40,5 +40,6 @@ jobs:
           # Link to project
           supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} # noqa
           
-          # Execute SQL file
-          supabase db execute ./sql/backfill-article-summaries.sql
+          # Run test SQL script
+          echo "🔍 Testing article summary fields..."
+          npx supabase db execute ./sql/test-article-summary-check.sql
