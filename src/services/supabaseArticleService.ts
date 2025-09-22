@@ -145,6 +145,11 @@ export class SupabaseArticleService {
           *,
           article_metrics!left(views, favorites, shares, avg_read_time)
         `, { count: 'exact' })
+        .not('summary', 'is', null)
+        .not('what', 'is', null)
+        .not('impact', 'is', null)
+        .not('takeaways', 'is', null)
+        .not('why_this_matters', 'is', null)
         .order('published_at', { ascending: false })
         .range(offset, offset + limit - 1);
 
@@ -205,6 +210,11 @@ export class SupabaseArticleService {
           article_metrics!left(views, favorites, shares, avg_read_time)
         `)
         .eq('id', articleId)
+        .not('summary', 'is', null)
+        .not('what', 'is', null)
+        .not('impact', 'is', null)
+        .not('takeaways', 'is', null)
+        .not('why_this_matters', 'is', null)
         .single();
 
       if (error) {
@@ -237,6 +247,11 @@ export class SupabaseArticleService {
           *,
           article_metrics!left(views, favorites, shares, avg_read_time)
         `)
+        .not('summary', 'is', null)
+        .not('what', 'is', null)
+        .not('impact', 'is', null)
+        .not('takeaways', 'is', null)
+        .not('why_this_matters', 'is', null)
         .order('created_at', { ascending: false })
         .limit(limit);
 
@@ -274,6 +289,11 @@ export class SupabaseArticleService {
           article_metrics!left(views, favorites, shares, avg_read_time)
         `)
         .in('category', preferredCategories)
+        .not('summary', 'is', null)
+        .not('what', 'is', null)
+        .not('impact', 'is', null)
+        .not('takeaways', 'is', null)
+        .not('why_this_matters', 'is', null)
         .order('published_at', { ascending: false })
         .limit(limit);
 
