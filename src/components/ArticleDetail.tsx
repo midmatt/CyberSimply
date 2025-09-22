@@ -273,19 +273,18 @@ export function ArticleDetail() {
     }
   };
 
-  // Determine if this is a ProcessedArticle or Article
-  // Check for both ProcessedArticle field names (camelCase) and database field names (snake_case)
-  const hasProcessedFields = ('what' in article && 'impact' in article && 'takeaways' in article) ||
-                            ('what' in article && 'impact' in article && 'takeaways' in article && 'why_this_matters' in article);
+  // Determine if this article has AI-generated fields
+  // Check for database field names (snake_case) from Supabase
+  const hasProcessedFields = !!(article as any).what || !!(article as any).impact || !!(article as any).takeaways || !!(article as any).why_this_matters;
   
   // Get the appropriate content
-  const content = hasProcessedFields ? article.summary : (article as Article).content;
+  const content = hasProcessedFields ? article.summary : (article as any).content;
   const whyThisMatters = hasProcessedFields 
-    ? (article as any).whyThisMatters || (article as any).why_this_matters
-    : (article as Article).whyItMatters?.[0] || '';
+    ? (article as any).why_this_matters
+    : (article as any).whyItMatters?.[0] || '';
 
   // Get author information
-  const author = hasProcessedFields ? (article as ProcessedArticle).author : null;
+  const author = (article as any).author;
   const source = article.source;
 
   // Format the summary text
@@ -303,24 +302,22 @@ export function ArticleDetail() {
     content: content
   });
 
-  // Debug sections for ProcessedArticle
-  if (hasProcessedFields) {
-    console.log("🔍 Detail Screen Sections:", {
-      what: (article as any).what,
-      impact: (article as any).impact,
-      takeaways: (article as any).takeaways,
-      whyThisMatters: (article as any).whyThisMatters || (article as any).why_this_matters
-    });
-    
-    // Log section population status
-    console.log("📊 Section Population Status:", {
-      hasWhat: !!(article as any).what,
-      hasImpact: !!(article as any).impact,
-      hasTakeaways: !!(article as any).takeaways,
-      hasWhyThisMatters: !!((article as any).whyThisMatters || (article as any).why_this_matters),
-      allSectionsPopulated: !!((article as any).what && (article as any).impact && (article as any).takeaways && ((article as any).whyThisMatters || (article as any).why_this_matters))
-    });
-  }
+  // Debug sections for AI-generated fields
+  console.log("🔍 Detail Screen AI Fields:", {
+    what: (article as any).what,
+    impact: (article as any).impact,
+    takeaways: (article as any).takeaways,
+    why_this_matters: (article as any).why_this_matters
+  });
+  
+  // Log section population status
+  console.log("📊 AI Section Population Status:", {
+    hasWhat: !!(article as any).what,
+    hasImpact: !!(article as any).impact,
+    hasTakeaways: !!(article as any).takeaways,
+    hasWhyThisMatters: !!(article as any).why_this_matters,
+    allSectionsPopulated: !!((article as any).what && (article as any).impact && (article as any).takeaways && (article as any).why_this_matters)
+  });
 
   return (
     <SafeAreaView style={styles.container}>
@@ -363,49 +360,58 @@ export function ArticleDetail() {
           />
         </View>
 
-        {hasProcessedFields && (
-          <View style={styles.aiSummaryContainer}>
-            {/* Only display What Happened section if data exists */}
-            {(article as any).what && (
-              <View style={styles.aiSection}>
-                <Text style={styles.aiSectionTitle}>What Happened</Text>
-                <ExpandableSummary 
-                  text={formatTextForDisplay((article as any).what ?? "")}
-                  textStyle={styles.aiSectionContent}
-                />
-              </View>
-            )}
-
-            {/* Only display Impact section if data exists */}
-            {(article as any).impact && (
-              <View style={styles.aiSection}>
-                <Text style={styles.aiSectionTitle}>Impact</Text>
-                <ExpandableSummary 
-                  text={formatTextForDisplay((article as any).impact ?? "")}
-                  textStyle={styles.aiSectionContent}
-                />
-              </View>
-            )}
-
-            {/* Only display Key Takeaways section if data exists */}
-            {(article as any).takeaways && (
-              <View style={styles.aiSection}>
-                <Text style={styles.aiSectionTitle}>Key Takeaways</Text>
-                <ExpandableSummary 
-                  text={formatTextForDisplay((article as any).takeaways ?? "")}
-                  textStyle={styles.aiSectionContent}
-                />
-              </View>
-            )}
+        {/* What Happened section */}
+        {(article as any).what && (
+          <View style={styles.summaryContainer}>
+            <Text style={styles.summaryTitle}>What Happened</Text>
+            <ExpandableSummary 
+              text={formatTextForDisplay((article as any).what ?? "")}
+              textStyle={{
+                color: colors.textPrimary,
+                lineHeight: TYPOGRAPHY.body.lineHeight * 1.3,
+              }}
+            />
           </View>
         )}
 
-        {hasProcessedFields && ((article as any).whyThisMatters || (article as any).why_this_matters) && (
-          <View style={styles.whyItMattersContainer}>
-            <Text style={styles.whyItMattersTitle}>Why This Matters</Text>
+        {/* Impact section */}
+        {(article as any).impact && (
+          <View style={styles.summaryContainer}>
+            <Text style={styles.summaryTitle}>Impact</Text>
             <ExpandableSummary 
-              text={formatTextForDisplay((article as any).whyThisMatters || (article as any).why_this_matters || "")}
-              textStyle={styles.whyItMattersPoint}
+              text={formatTextForDisplay((article as any).impact ?? "")}
+              textStyle={{
+                color: colors.textPrimary,
+                lineHeight: TYPOGRAPHY.body.lineHeight * 1.3,
+              }}
+            />
+          </View>
+        )}
+
+        {/* Key Takeaways section */}
+        {(article as any).takeaways && (
+          <View style={styles.summaryContainer}>
+            <Text style={styles.summaryTitle}>Key Takeaways</Text>
+            <ExpandableSummary 
+              text={formatTextForDisplay((article as any).takeaways ?? "")}
+              textStyle={{
+                color: colors.textPrimary,
+                lineHeight: TYPOGRAPHY.body.lineHeight * 1.3,
+              }}
+            />
+          </View>
+        )}
+
+        {/* Why This Matters section */}
+        {(article as any).why_this_matters && (
+          <View style={styles.summaryContainer}>
+            <Text style={styles.summaryTitle}>Why This Matters</Text>
+            <ExpandableSummary 
+              text={formatTextForDisplay((article as any).why_this_matters ?? "")}
+              textStyle={{
+                color: colors.textPrimary,
+                lineHeight: TYPOGRAPHY.body.lineHeight * 1.3,
+              }}
             />
           </View>
         )}
