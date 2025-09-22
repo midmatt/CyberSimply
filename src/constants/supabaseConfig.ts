@@ -80,9 +80,9 @@ export const DEFAULT_USER_PREFERENCES = {
   notifications_enabled: true,
   email_digest_enabled: true,
   digest_frequency: DIGEST_FREQUENCY.DAILY,
-  preferred_categories: ['cybersecurity', 'hacking', 'general'],
+  preferred_categories: ['cybersecurity', 'hacking', 'general'] as string[],
   ai_summaries_enabled: true,
-} as const;
+};
 
 // Default notification preferences
 export const DEFAULT_NOTIFICATION_PREFERENCES = {

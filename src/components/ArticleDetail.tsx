@@ -274,16 +274,18 @@ export function ArticleDetail() {
   };
 
   // Determine if this is a ProcessedArticle or Article
-  const isProcessedArticle = 'what' in article && 'impact' in article && 'takeaways' in article;
+  // Check for both ProcessedArticle field names (camelCase) and database field names (snake_case)
+  const hasProcessedFields = ('what' in article && 'impact' in article && 'takeaways' in article) ||
+                            ('what' in article && 'impact' in article && 'takeaways' in article && 'why_this_matters' in article);
   
   // Get the appropriate content
-  const content = isProcessedArticle ? article.summary : (article as Article).content;
-  const whyThisMatters = isProcessedArticle 
-    ? (article as ProcessedArticle).whyThisMatters
+  const content = hasProcessedFields ? article.summary : (article as Article).content;
+  const whyThisMatters = hasProcessedFields 
+    ? (article as any).whyThisMatters || (article as any).why_this_matters
     : (article as Article).whyItMatters?.[0] || '';
 
   // Get author information
-  const author = isProcessedArticle ? (article as ProcessedArticle).author : null;
+  const author = hasProcessedFields ? (article as ProcessedArticle).author : null;
   const source = article.source;
 
   // Format the summary text
@@ -296,28 +298,27 @@ export function ArticleDetail() {
     summaryLength: summaryText ? summaryText.length : 0,
     imageUrl: article.imageUrl,
     source: article.source,
-    isProcessedArticle: isProcessedArticle,
-    rawSummary: isProcessedArticle ? (article as ProcessedArticle).summary : 'N/A',
+    isProcessedArticle: hasProcessedFields,
+    rawSummary: hasProcessedFields ? article.summary : 'N/A',
     content: content
   });
 
   // Debug sections for ProcessedArticle
-  if (isProcessedArticle) {
-    const processedArticle = article as ProcessedArticle;
+  if (hasProcessedFields) {
     console.log("🔍 Detail Screen Sections:", {
-      what: processedArticle.what,
-      impact: processedArticle.impact,
-      takeaways: processedArticle.takeaways,
-      whyThisMatters: processedArticle.whyThisMatters
+      what: (article as any).what,
+      impact: (article as any).impact,
+      takeaways: (article as any).takeaways,
+      whyThisMatters: (article as any).whyThisMatters || (article as any).why_this_matters
     });
     
     // Log section population status
     console.log("📊 Section Population Status:", {
-      hasWhat: !!processedArticle.what,
-      hasImpact: !!processedArticle.impact,
-      hasTakeaways: !!processedArticle.takeaways,
-      hasWhyThisMatters: !!processedArticle.whyThisMatters,
-      allSectionsPopulated: !!(processedArticle.what && processedArticle.impact && processedArticle.takeaways && processedArticle.whyThisMatters)
+      hasWhat: !!(article as any).what,
+      hasImpact: !!(article as any).impact,
+      hasTakeaways: !!(article as any).takeaways,
+      hasWhyThisMatters: !!((article as any).whyThisMatters || (article as any).why_this_matters),
+      allSectionsPopulated: !!((article as any).what && (article as any).impact && (article as any).takeaways && ((article as any).whyThisMatters || (article as any).why_this_matters))
     });
   }
 
@@ -362,36 +363,36 @@ export function ArticleDetail() {
           />
         </View>
 
-        {isProcessedArticle && (
+        {hasProcessedFields && (
           <View style={styles.aiSummaryContainer}>
             {/* Only display What Happened section if data exists */}
-            {(article as ProcessedArticle).what && (
+            {(article as any).what && (
               <View style={styles.aiSection}>
                 <Text style={styles.aiSectionTitle}>What Happened</Text>
                 <ExpandableSummary 
-                  text={formatTextForDisplay((article as ProcessedArticle).what ?? "")}
+                  text={formatTextForDisplay((article as any).what ?? "")}
                   textStyle={styles.aiSectionContent}
                 />
               </View>
             )}
 
             {/* Only display Impact section if data exists */}
-            {(article as ProcessedArticle).impact && (
+            {(article as any).impact && (
               <View style={styles.aiSection}>
                 <Text style={styles.aiSectionTitle}>Impact</Text>
                 <ExpandableSummary 
-                  text={formatTextForDisplay((article as ProcessedArticle).impact ?? "")}
+                  text={formatTextForDisplay((article as any).impact ?? "")}
                   textStyle={styles.aiSectionContent}
                 />
               </View>
             )}
 
             {/* Only display Key Takeaways section if data exists */}
-            {(article as ProcessedArticle).takeaways && (
+            {(article as any).takeaways && (
               <View style={styles.aiSection}>
                 <Text style={styles.aiSectionTitle}>Key Takeaways</Text>
                 <ExpandableSummary 
-                  text={formatTextForDisplay((article as ProcessedArticle).takeaways ?? "")}
+                  text={formatTextForDisplay((article as any).takeaways ?? "")}
                   textStyle={styles.aiSectionContent}
                 />
               </View>
@@ -399,11 +400,11 @@ export function ArticleDetail() {
           </View>
         )}
 
-        {isProcessedArticle && (article as ProcessedArticle).whyThisMatters && (
+        {hasProcessedFields && ((article as any).whyThisMatters || (article as any).why_this_matters) && (
           <View style={styles.whyItMattersContainer}>
             <Text style={styles.whyItMattersTitle}>Why This Matters</Text>
             <ExpandableSummary 
-              text={formatTextForDisplay((article as ProcessedArticle).whyThisMatters ?? "")}
+              text={formatTextForDisplay((article as any).whyThisMatters || (article as any).why_this_matters || "")}
               textStyle={styles.whyItMattersPoint}
             />
           </View>

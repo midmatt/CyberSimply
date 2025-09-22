@@ -232,80 +232,61 @@ export function NewsProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_ERROR', payload: null });
 
     try {
-      // Always fetch fresh articles from NewsService first
-      console.log('NewsContext: Fetching fresh articles from NewsService...');
-      const newArticles = await NewsService.fetchNewsFromAPI(1);
-      console.log(`NewsContext: Fetched ${newArticles.length} fresh articles from NewsService`);
+      // Fetch articles from Supabase instead of local storage
+      console.log('NewsContext: Fetching articles from Supabase...');
+      const supabaseService = SupabaseArticleService.getInstance();
+      const result = await supabaseService.getArticles({ limit: 50 });
       
-      if (newArticles.length > 0) {
-        // Save new articles to storage (this will merge with existing ones)
-        console.log('NewsContext: Saving new articles to storage...');
-        await saveArticlesToBoth(newArticles);
+      if (result.success && result.data) {
+        console.log(`NewsContext: Fetched ${result.data.articles.length} articles from Supabase`);
         
-        console.log(`NewsContext: Added ${newArticles.length} new articles to storage`);
-      }
-      
-      // Get all articles from storage and update state
-      console.log('NewsContext: Getting all articles from storage...');
-      let allArticles = await ArticleStorageService.getArticles();
-      console.log(`NewsContext: Total articles in storage: ${allArticles.length}`);
-      
-      // Migrate articles to ensure they have authorDisplay field
-      allArticles = allArticles.map(article => ({
-        ...article,
-        authorDisplay: article.authorDisplay || article.author || article.source || 'Unknown'
-      }));
-      
-      // If any articles were migrated, save them back
-      const migratedArticles = allArticles.filter(article => !article.authorDisplay || article.authorDisplay === 'Unknown');
-      if (migratedArticles.length > 0) {
-        console.log(`NewsContext: Migrating ${migratedArticles.length} articles to add authorDisplay field`);
-        await ArticleStorageService.saveArticles(allArticles);
-      }
-      
-      // If we have fewer than 50 articles, try to fetch more from different categories
-      if (allArticles.length < 50) {
-        console.log('NewsContext: Not enough articles, fetching from additional categories...');
+        // Transform Supabase articles to ProcessedArticle format
+        const processedArticles: ProcessedArticle[] = result.data.articles.map(article => ({
+          id: article.id,
+          title: article.title,
+          sourceUrl: article.source_url || '',
+          publishedAt: article.published_at || new Date().toISOString(),
+          source: article.source || 'Unknown',
+          rawContent: article.content || '',
+          summary: article.summary,
+          impact: article.impact,
+          takeaways: article.takeaways,
+          author: article.author,
+          authorDisplay: article.author || article.source || 'Unknown',
+          imageUrl: article.image_url,
+          category: article.category as 'cybersecurity' | 'hacking' | 'general',
+          what: article.what,
+          whyThisMatters: article.why_this_matters
+        }));
         
-        // Fetch from different categories
-        const additionalCategories = ['hacking', 'general'];
-        for (const category of additionalCategories) {
-          try {
-            const categoryArticles = await NewsService.fetchNewsFromAPI(1);
-            if (categoryArticles.length > 0) {
-              await saveArticlesToBoth(categoryArticles);
-              console.log(`NewsContext: Added ${categoryArticles.length} articles from ${category} category`);
-            }
-          } catch (error) {
-            console.warn(`NewsContext: Failed to fetch articles for ${category}:`, error);
-          }
-        }
+        // Update state with articles from Supabase
+        dispatch({ type: 'SET_ARTICLES', payload: processedArticles });
+        dispatch({ type: 'SET_LAST_UPDATED', payload: new Date() });
+        dispatch({ type: 'SET_LOADING', payload: false });
         
-        // Get updated articles count
-        const updatedArticles = await ArticleStorageService.getArticles();
-        console.log(`NewsContext: Updated total articles: ${updatedArticles.length}`);
-        dispatch({ type: 'SET_ARTICLES', payload: updatedArticles });
+        console.log('NewsContext: fetchNews completed successfully with Supabase data');
+        return;
       } else {
+        console.error('NewsContext: Failed to fetch from Supabase:', result.error);
+        
+        // Fallback to local storage if Supabase fails
+        console.log('NewsContext: Falling back to local storage...');
+        let allArticles = await ArticleStorageService.getArticles();
+        console.log(`NewsContext: Total articles in local storage: ${allArticles.length}`);
+      
+        // Migrate articles to ensure they have authorDisplay field
+        allArticles = allArticles.map(article => ({
+          ...article,
+          authorDisplay: article.authorDisplay || article.author || article.source || 'Unknown'
+        }));
+        
+        // Update state with local articles
         dispatch({ type: 'SET_ARTICLES', payload: allArticles });
+        dispatch({ type: 'SET_LAST_UPDATED', payload: new Date() });
+        dispatch({ type: 'SET_LOADING', payload: false });
+        
+        console.log('NewsContext: Using fallback local storage data');
       }
-      
-      dispatch({ type: 'SET_LAST_UPDATED', payload: new Date() });
-      dispatch({ type: 'SET_CURRENT_PAGE', payload: 1 }); // Reset page
-      dispatch({ type: 'SET_HAS_MORE', payload: true }); // Reset hasMore
-      
-      // Update storage stats
-      const stats = await ArticleStorageService.getStorageStats();
-      dispatch({ type: 'SET_STORAGE_STATS', payload: stats });
-      
-      // Archive old articles after saving new ones
-      await archiveOldArticles();
-      
-      console.log(`NewsContext: Total articles in storage: ${allArticles.length}`);
-      console.log('NewsContext: Sample article:', allArticles[0]);
-
-      // AI summarization is now handled by GitHub Actions
-      // Articles are pre-processed and stored in Supabase
-      console.log('NewsContext: AI processing handled by GitHub Actions - using pre-processed articles');
 
     } catch (error) {
       console.error('NewsContext: Error in fetchNews:', error);
@@ -378,26 +359,44 @@ export function NewsProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_REFRESHING', payload: true });
     
     try {
-      // Fetch new articles from API
-      const newArticles = await NewsService.fetchNewsFromAPI(1); // Reset to page 1
+      // Fetch fresh articles from Supabase
+      console.log('NewsContext: Refreshing articles from Supabase...');
+      const supabaseService = SupabaseArticleService.getInstance();
+      const result = await supabaseService.getArticles({ limit: 50 });
       
-      if (newArticles.length > 0) {
-        // Save new articles to storage (this will merge with existing ones)
-        await saveArticlesToBoth(newArticles);
+      if (result.success && result.data) {
+        console.log(`NewsContext: Refreshed ${result.data.articles.length} articles from Supabase`);
         
-        // Get all articles from storage and filter to show only recent ones
-        const allArticles = await ArticleStorageService.getArticles();
-        const recentArticles = getRecentArticlesFromUtils(allArticles, 14); // Show articles from last 2 weeks
-
-        // Update state with recent articles only
-        dispatch({ type: 'SET_ARTICLES', payload: recentArticles });
+        // Transform Supabase articles to ProcessedArticle format
+        const processedArticles: ProcessedArticle[] = result.data.articles.map(article => ({
+          id: article.id,
+          title: article.title,
+          sourceUrl: article.source_url || '',
+          publishedAt: article.published_at || new Date().toISOString(),
+          source: article.source || 'Unknown',
+          rawContent: article.content || '',
+          summary: article.summary,
+          impact: article.impact,
+          takeaways: article.takeaways,
+          author: article.author,
+          authorDisplay: article.author || article.source || 'Unknown',
+          imageUrl: article.image_url,
+          category: article.category as 'cybersecurity' | 'hacking' | 'general',
+          what: article.what,
+          whyThisMatters: article.why_this_matters
+        }));
+        
+        // Update state with fresh articles from Supabase
+        dispatch({ type: 'SET_ARTICLES', payload: processedArticles });
         dispatch({ type: 'SET_LAST_UPDATED', payload: new Date() });
         dispatch({ type: 'SET_CURRENT_PAGE', payload: 1 }); // Reset page
         dispatch({ type: 'SET_HAS_MORE', payload: true }); // Reset hasMore
-        
-        // Update storage stats
-        const stats = await ArticleStorageService.getStorageStats();
-        dispatch({ type: 'SET_STORAGE_STATS', payload: stats });
+      } else {
+        console.error('NewsContext: Failed to refresh from Supabase:', result.error);
+        // Fallback to local storage
+        const allArticles = await ArticleStorageService.getArticles();
+        dispatch({ type: 'SET_ARTICLES', payload: allArticles });
+        dispatch({ type: 'SET_LAST_UPDATED', payload: new Date() });
       }
 
       // AI summarization is now handled by GitHub Actions

@@ -5,9 +5,18 @@ import { TABLES, DEFAULT_USER_PREFERENCES, DEFAULT_NOTIFICATION_PREFERENCES, THE
 type UserPreferences = Database['public']['Tables']['user_preferences']['Row'];
 type UserPreferencesInsert = Database['public']['Tables']['user_preferences']['Insert'];
 type UserPreferencesUpdate = Database['public']['Tables']['user_preferences']['Update'];
-type NotificationPreferences = Database['public']['Tables']['notification_preferences']['Row'];
-type NotificationPreferencesInsert = Database['public']['Tables']['notification_preferences']['Insert'];
-type NotificationPreferencesUpdate = Database['public']['Tables']['notification_preferences']['Update'];
+// Notification preferences are stored in user_preferences table
+type NotificationPreferences = {
+  id: string;
+  user_id: string;
+  notifications_enabled: boolean;
+  email_digest_enabled: boolean;
+  digest_frequency: string;
+  created_at: string;
+  updated_at: string;
+};
+type NotificationPreferencesInsert = Omit<NotificationPreferences, 'id' | 'created_at' | 'updated_at'>;
+type NotificationPreferencesUpdate = Partial<NotificationPreferencesInsert>;
 type UserFavorites = Database['public']['Tables']['user_favorites']['Row'];
 type ReadingHistory = Database['public']['Tables']['reading_history']['Row'];
 
@@ -157,8 +166,8 @@ export class SupabaseUserService {
   public async getNotificationPreferences(userId: string): Promise<{ success: boolean; data?: NotificationSettings; error?: string }> {
     try {
       const { data, error } = await supabase
-        .from(TABLES.NOTIFICATION_PREFERENCES)
-        .select('*')
+        .from(TABLES.USER_PREFERENCES)
+        .select('notifications_enabled, email_digest_enabled, digest_frequency')
         .eq('user_id', userId)
         .single();
 
@@ -172,10 +181,10 @@ export class SupabaseUserService {
       }
 
       const settings: NotificationSettings = {
-        breakingNews: data.breaking_news,
-        dailyDigest: data.daily_digest,
-        weeklyRoundup: data.weekly_roundup,
-        securityAlerts: data.security_alerts,
+        breakingNews: data.notifications_enabled,
+        dailyDigest: data.email_digest_enabled,
+        weeklyRoundup: data.digest_frequency === 'weekly',
+        securityAlerts: data.notifications_enabled,
       };
 
       return { success: true, data: settings };
@@ -190,27 +199,33 @@ export class SupabaseUserService {
    */
   private async createDefaultNotificationPreferences(userId: string): Promise<{ success: boolean; data?: NotificationSettings; error?: string }> {
     try {
-      const preferencesInsert: NotificationPreferencesInsert = {
+      // Create default user preferences which includes notification settings
+      const preferencesInsert: UserPreferencesInsert = {
         user_id: userId,
-        ...DEFAULT_NOTIFICATION_PREFERENCES,
+        theme: 'system',
+        notifications_enabled: true,
+        email_digest_enabled: true,
+        digest_frequency: 'daily',
+        preferred_categories: ['cybersecurity', 'hacking', 'general'] as string[],
+        ai_summaries_enabled: true,
       };
 
       const { data, error } = await supabase
-        .from(TABLES.NOTIFICATION_PREFERENCES)
+        .from(TABLES.USER_PREFERENCES)
         .insert(preferencesInsert)
         .select()
         .single();
 
       if (error) {
-        console.error('Error creating default notification preferences:', error);
+        console.error('Error creating default user preferences:', error);
         return { success: false, error: error.message };
       }
 
       const settings: NotificationSettings = {
-        breakingNews: data.breaking_news,
-        dailyDigest: data.daily_digest,
-        weeklyRoundup: data.weekly_roundup,
-        securityAlerts: data.security_alerts,
+        breakingNews: data.notifications_enabled,
+        dailyDigest: data.email_digest_enabled,
+        weeklyRoundup: data.digest_frequency === 'weekly',
+        securityAlerts: data.notifications_enabled,
       };
 
       return { success: true, data: settings };
@@ -225,15 +240,15 @@ export class SupabaseUserService {
    */
   public async updateNotificationPreferences(userId: string, updates: Partial<NotificationSettings>): Promise<{ success: boolean; error?: string }> {
     try {
-      const updateData: NotificationPreferencesUpdate = {};
+      const updateData: UserPreferencesUpdate = {};
 
-      if (updates.breakingNews !== undefined) updateData.breaking_news = updates.breakingNews;
-      if (updates.dailyDigest !== undefined) updateData.daily_digest = updates.dailyDigest;
-      if (updates.weeklyRoundup !== undefined) updateData.weekly_roundup = updates.weeklyRoundup;
-      if (updates.securityAlerts !== undefined) updateData.security_alerts = updates.securityAlerts;
+      if (updates.breakingNews !== undefined) updateData.notifications_enabled = updates.breakingNews;
+      if (updates.dailyDigest !== undefined) updateData.email_digest_enabled = updates.dailyDigest;
+      if (updates.weeklyRoundup !== undefined) updateData.digest_frequency = updates.weeklyRoundup ? 'weekly' : 'daily';
+      if (updates.securityAlerts !== undefined) updateData.notifications_enabled = updates.securityAlerts;
 
       const { error } = await supabase
-        .from(TABLES.NOTIFICATION_PREFERENCES)
+        .from(TABLES.USER_PREFERENCES)
         .update(updateData)
         .eq('user_id', userId);
 

@@ -295,8 +295,8 @@ export class SupabaseAnalyticsService {
         return acc;
       }, {} as Record<string, number>);
 
-      const topEvents = Object.entries(eventCounts)
-        .map(([eventType, count]) => ({ eventType, count }))
+      const topEvents: Array<{ eventType: string; count: number }> = Object.entries(eventCounts)
+        .map(([eventType, count]) => ({ eventType, count: Number(count) }))
         .sort((a, b) => b.count - a.count)
         .slice(0, 10);
 
@@ -311,8 +311,8 @@ export class SupabaseAnalyticsService {
           return acc;
         }, {} as Record<string, number>);
 
-      const topArticles = Object.entries(articleViews)
-        .map(([articleId, views]) => ({ articleId, views }))
+      const topArticles: Array<{ articleId: string; views: number }> = Object.entries(articleViews)
+        .map(([articleId, views]) => ({ articleId, views: Number(views) }))
         .sort((a, b) => b.views - a.views)
         .slice(0, 10);
 
