@@ -10,7 +10,7 @@ import {
   Image,
   Linking,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Article } from '../types';
@@ -176,19 +176,21 @@ export function ArticleDetail() {
   // Safety check - if no article, show error message
   if (!article) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={28} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Article Not Found</Text>
-        </View>
-        <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle" size={64} color={colors.error} />
-          <Text style={styles.errorTitle}>Article Not Found</Text>
-          <Text style={styles.errorMessage}>
-            The article you're looking for could not be loaded. Please go back and try again.
-          </Text>
+      <SafeAreaView style={{ flex: 1 }}>
+        <View style={styles.container}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+              <Ionicons name="arrow-back" size={28} color={colors.textPrimary} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Article Not Found</Text>
+          </View>
+          <View style={styles.errorContainer}>
+            <Ionicons name="alert-circle" size={64} color={colors.error} />
+            <Text style={styles.errorTitle}>Article Not Found</Text>
+            <Text style={styles.errorMessage}>
+              The article you're looking for could not be loaded. Please go back and try again.
+            </Text>
+          </View>
         </View>
       </SafeAreaView>
     );
@@ -218,7 +220,7 @@ export function ArticleDetail() {
 
   const handleSourceLinkPress = () => {
     if (article.sourceUrl && isValidUrl(article.sourceUrl)) {
-      Linking.openURL(article.sourceUrl).catch(err => {
+      Linking.openURL(article.sourceUrl).catch((err: unknown) => {
         console.error('Failed to open URL:', err);
         Alert.alert('Error', 'Could not open the source link. The URL may be invalid or inaccessible.');
       });
@@ -273,22 +275,21 @@ export function ArticleDetail() {
     }
   };
 
-  // Determine if this article has AI-generated fields
-  // Check for database field names (snake_case) from Supabase
-  const hasProcessedFields = !!(article as any).what || !!(article as any).impact || !!(article as any).takeaways || !!(article as any).why_this_matters;
+  // Determine if this is a ProcessedArticle or Article
+  const isProcessedArticle = 'what' in article && 'impact' in article && 'takeaways' in article;
   
   // Get the appropriate content
-  const content = hasProcessedFields ? article.summary : (article as any).content;
-  const whyThisMatters = hasProcessedFields 
-    ? (article as any).why_this_matters
-    : (article as any).whyItMatters?.[0] || '';
+  const content = isProcessedArticle ? article.summary : (article as Article).content;
+  const whyThisMatters = isProcessedArticle 
+    ? (article as ProcessedArticle).whyThisMatters
+    : (article as Article).whyItMatters?.[0] || '';
 
   // Get author information
-  const author = (article as any).author;
+  const author = isProcessedArticle ? (article as ProcessedArticle).author : null;
   const source = article.source;
 
   // Format the summary text
-  const summaryText = content ? formatTextForDisplay(content) : null;
+  const summaryText = formatTextForDisplay(content ?? '');
   
   // Debug logging
   console.log(`🔍 ArticleDetail - Article data:`, {
@@ -297,137 +298,134 @@ export function ArticleDetail() {
     summaryLength: summaryText ? summaryText.length : 0,
     imageUrl: article.imageUrl,
     source: article.source,
-    isProcessedArticle: hasProcessedFields,
-    rawSummary: hasProcessedFields ? article.summary : 'N/A',
+    isProcessedArticle: isProcessedArticle,
+    rawSummary: isProcessedArticle ? (article as ProcessedArticle).summary : 'N/A',
     content: content
   });
 
-  // Debug sections for AI-generated fields
-  console.log("🔍 Detail Screen AI Fields:", {
-    what: (article as any).what,
-    impact: (article as any).impact,
-    takeaways: (article as any).takeaways,
-    whyThisMatters: (article as any).whyThisMatters
-  });
-  
-  // Log section population status
-  console.log("📊 AI Section Population Status:", {
-    hasWhat: !!(article as any).what,
-    hasImpact: !!(article as any).impact,
-    hasTakeaways: !!(article as any).takeaways,
-    hasWhyThisMatters: !!(article as any).whyThisMatters,
-    allSectionsPopulated: !!((article as any).what && (article as any).impact && (article as any).takeaways && (article as any).whyThisMatters)
-  });
+  // Debug sections for ProcessedArticle
+  if (isProcessedArticle) {
+    const processedArticle = article as ProcessedArticle;
+    console.log("🔍 Detail Screen Sections:", {
+      what: processedArticle.what,
+      impact: processedArticle.impact,
+      takeaways: processedArticle.takeaways,
+      whyThisMatters: processedArticle.whyThisMatters
+    });
+    
+    // Log section population status
+    console.log("📊 Section Population Status:", {
+      hasWhat: !!processedArticle.what,
+      hasImpact: !!processedArticle.impact,
+      hasTakeaways: !!processedArticle.takeaways,
+      hasWhyThisMatters: !!processedArticle.whyThisMatters,
+      allSectionsPopulated: !!(processedArticle.what && processedArticle.impact && processedArticle.takeaways && processedArticle.whyThisMatters)
+    });
+  }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={28} color={colors.textPrimary} />
-        </TouchableOpacity>
-        <View style={styles.headerRight}>
-          <TouchableOpacity onPress={handleShare} style={styles.shareButton}>
-            <Ionicons name="share-outline" size={28} color={colors.textPrimary} />
+    <SafeAreaView style={{ flex: 1 }}>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={28} color={colors.textPrimary} />
           </TouchableOpacity>
+          <View style={styles.headerRight}>
+            <TouchableOpacity onPress={handleShare} style={styles.shareButton}>
+              <Ionicons name="share-outline" size={28} color={colors.textPrimary} />
+            </TouchableOpacity>
+          </View>
         </View>
+
+        <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {/* Only render image if imageUrl exists and is valid */}
+          {article.imageUrl && article.imageUrl.trim() !== '' && (
+            <ArticleImage
+              imageUrl={article.imageUrl}
+              style={styles.image}
+              showPlaceholder={false}
+            />
+          )}
+
+          <Text style={styles.title}>{formatTextForDisplay(article.title)}</Text>
+          
+          {/* Show authorDisplay at the top */}
+          <Text style={styles.authorText}>
+            {article.authorDisplay} (simplified with AI)
+          </Text>
+          
+          <View style={styles.summaryContainer}>
+            <Text style={styles.summaryTitle}>Summary</Text>
+            <ExpandableSummary 
+              text={summaryText || "This article is currently unavailable."}
+              maxLines={3}
+              textStyle={{
+                color: colors.textPrimary,
+                lineHeight: TYPOGRAPHY.body.lineHeight * 1.3,
+              }}
+            />
+          </View>
+
+          {isProcessedArticle && (article as ProcessedArticle).what && (
+            <View style={styles.aiSummaryContainer}>
+              {/* What Happened section */}
+              <View style={styles.aiSection}>
+                <Text style={styles.aiSectionTitle}>What Happened</Text>
+                <ExpandableSummary 
+                  text={formatTextForDisplay((article as ProcessedArticle).what || '')}
+                  maxLines={2}
+                  textStyle={styles.aiSectionContent}
+                />
+              </View>
+            </View>
+          )}
+
+          {isProcessedArticle && (article as ProcessedArticle).impact && (
+            <View style={styles.aiSection}>
+              <Text style={styles.aiSectionTitle}>Impact</Text>
+              <ExpandableSummary 
+                text={formatTextForDisplay((article as ProcessedArticle).impact || '')}
+                maxLines={2}
+                textStyle={styles.aiSectionContent}
+              />
+            </View>
+          )}
+
+          {isProcessedArticle && (article as ProcessedArticle).takeaways && (
+            <View style={styles.aiSection}>
+              <Text style={styles.aiSectionTitle}>Key Takeaways</Text>
+              <ExpandableSummary 
+                text={formatTextForDisplay((article as ProcessedArticle).takeaways || '')}
+                maxLines={2}
+                textStyle={styles.aiSectionContent}
+              />
+            </View>
+          )}
+
+          {isProcessedArticle && (article as ProcessedArticle).whyThisMatters && (
+            <View style={styles.whyItMattersContainer}>
+              <Text style={styles.whyItMattersTitle}>Why This Matters</Text>
+              <ExpandableSummary 
+                text={formatTextForDisplay((article as ProcessedArticle).whyThisMatters || '')}
+                maxLines={2}
+                textStyle={styles.whyItMattersPoint}
+              />
+            </View>
+          )}
+
+          {article.sourceUrl && (
+            <TouchableOpacity onPress={handleSourceLinkPress} style={styles.sourceLinkContainer}>
+              <Text style={styles.sourceLink}>
+                Read full article at: {article.source || 'Source'}
+              </Text>
+              <Ionicons name="open-outline" size={18} color={colors.accent} />
+            </TouchableOpacity>
+          )}
+
+          {/* Ad Banner after content */}
+          <AdBanner size="medium" showCloseButton={true} />
+        </ScrollView>
       </View>
-
-      <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Only render image if imageUrl exists and is valid */}
-        {article.imageUrl && article.imageUrl.trim() !== '' && (
-          <ArticleImage
-            imageUrl={article.imageUrl}
-            style={styles.image}
-            showPlaceholder={false}
-          />
-        )}
-
-        <Text style={styles.title}>{formatTextForDisplay(article.title)}</Text>
-        
-        {/* Show authorDisplay at the top */}
-        <Text style={styles.authorText}>
-          {article.authorDisplay} (simplified with AI)
-        </Text>
-        
-        <View style={styles.summaryContainer}>
-          <Text style={styles.summaryTitle}>Summary</Text>
-          <ExpandableSummary 
-            text={summaryText || "This article is currently unavailable."}
-            textStyle={{
-              color: colors.textPrimary,
-              lineHeight: TYPOGRAPHY.body.lineHeight * 1.3,
-            }}
-          />
-        </View>
-
-        {/* What Happened section */}
-        {(article as any).what && (
-          <View style={styles.summaryContainer}>
-            <Text style={styles.summaryTitle}>What Happened</Text>
-            <ExpandableSummary 
-              text={formatTextForDisplay((article as any).what ?? "")}
-              textStyle={{
-                color: colors.textPrimary,
-                lineHeight: TYPOGRAPHY.body.lineHeight * 1.3,
-              }}
-            />
-          </View>
-        )}
-
-        {/* Impact section */}
-        {(article as any).impact && (
-          <View style={styles.summaryContainer}>
-            <Text style={styles.summaryTitle}>Impact</Text>
-            <ExpandableSummary 
-              text={formatTextForDisplay((article as any).impact ?? "")}
-              textStyle={{
-                color: colors.textPrimary,
-                lineHeight: TYPOGRAPHY.body.lineHeight * 1.3,
-              }}
-            />
-          </View>
-        )}
-
-        {/* Key Takeaways section */}
-        {(article as any).takeaways && (
-          <View style={styles.summaryContainer}>
-            <Text style={styles.summaryTitle}>Key Takeaways</Text>
-            <ExpandableSummary 
-              text={formatTextForDisplay((article as any).takeaways ?? "")}
-              textStyle={{
-                color: colors.textPrimary,
-                lineHeight: TYPOGRAPHY.body.lineHeight * 1.3,
-              }}
-            />
-          </View>
-        )}
-
-        {/* Why This Matters section */}
-        {(article as any).whyThisMatters && (
-          <View style={styles.summaryContainer}>
-            <Text style={styles.summaryTitle}>Why This Matters</Text>
-            <ExpandableSummary 
-              text={formatTextForDisplay((article as any).whyThisMatters ?? "")}
-              textStyle={{
-                color: colors.textPrimary,
-                lineHeight: TYPOGRAPHY.body.lineHeight * 1.3,
-              }}
-            />
-          </View>
-        )}
-
-        {article.sourceUrl && (
-          <TouchableOpacity onPress={handleSourceLinkPress} style={styles.sourceLinkContainer}>
-            <Text style={styles.sourceLink}>
-              Read full article at: {article.source || 'Source'}
-            </Text>
-            <Ionicons name="open-outline" size={18} color={colors.accent} style={styles.sourceLinkIcon} />
-          </TouchableOpacity>
-        )}
-
-        {/* Ad Banner after content */}
-        <AdBanner size="medium" showCloseButton={true} />
-      </ScrollView>
     </SafeAreaView>
   );
 }
