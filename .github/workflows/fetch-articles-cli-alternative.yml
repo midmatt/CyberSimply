@@ -25,11 +25,13 @@ jobs:
       - run: node scripts/fetch-more-articles.js
 
       # Alternative approach using Supabase CLI with proper authentication
-      - name: Setup Supabase CLI
+      - name: Install Supabase CLI
         if: ${{ env.SUPABASE_PROJECT_REF != '' && env.SUPABASE_ACCESS_TOKEN != '' }}
-        uses: supabase/setup-cli@v1
-        with:
-          version: latest
+        run: npm install -g supabase@latest
+
+      - name: Verify Supabase CLI installation
+        if: ${{ env.SUPABASE_PROJECT_REF != '' && env.SUPABASE_ACCESS_TOKEN != '' }}
+        run: supabase --version
           
       - name: Test Article Summary Fields
         if: ${{ env.SUPABASE_PROJECT_REF != '' && env.SUPABASE_ACCESS_TOKEN != '' }}

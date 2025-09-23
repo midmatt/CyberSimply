@@ -27,10 +27,11 @@ jobs:
       - name: Fetch and Summarize Articles with Structured JSON
         run: node scripts/fetch-more-articles.js
 
-      - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
-        with:
-          version: latest
+      - name: Install Supabase CLI
+        run: npm install -g supabase@latest
+
+      - name: Verify Supabase CLI installation
+        run: supabase --version
 
       - name: Run SQL migration to update article fields to TEXT (safe)
         run: |
