@@ -94,18 +94,19 @@ jobs:
 
       # 👇 Test step to verify article summary fields are populated
       - name: Test Article Summary Fields
-        if: ${{ secrets.SUPABASE_PROJECT_REF != '' && secrets.SUPABASE_ACCESS_TOKEN != '' }}
+        if: ${{ env.SUPABASE_PROJECT_REF != '' && env.SUPABASE_ACCESS_TOKEN != '' }}
         run: |
           # Install Supabase CLI
           curl -fsSL https://supabase.com/install.sh | sh
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           
           # Link to Supabase project
-          npx supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} # noqa
+          npx supabase link --project-ref "$SUPABASE_PROJECT_REF"
           
           # Run test SQL script
           echo "🔍 Testing article summary fields..."
           npx supabase db execute ./sql/test-article-summary-check.sql
         env:
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }} # noqa
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }} # noqa
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+  
