@@ -1,4 +1,4 @@
-name: Fetch and Summarize Articles
+name: Fetch and Summarize Articles CLI Alternative
 
 on:
   schedule:
@@ -8,6 +8,14 @@ on:
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v3
@@ -15,97 +23,20 @@ jobs:
           node-version: 20
       - name: Clean install
         run: rm -rf node_modules package-lock.json && npm install
+
       - name: Fetch and Summarize Articles with Structured JSON
         run: node scripts/fetch-more-articles.js
-        env:
-          # Supabase configuration secrets (must exist in repo settings)
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }} # noqa
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }} # noqa
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }} # noqa
-          # API keys for data sources (must exist in repo settings)
-          NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }} # noqa
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }} # noqa
-          # Supabase CLI authentication
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }} # noqa
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }} # noqa
 
-      # 👇 Clean up existing generic placeholder content
-      - name: Cleanup Generic Article Content
-        run: |
-          # Create a Node.js script to execute SQL via Supabase REST API
-          cat > cleanup-script.js << 'EOF'
-          const { createClient } = require('@supabase/supabase-js');
-          
-          const supabaseUrl = process.env.SUPABASE_URL;
-          const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-          
-          if (!supabaseUrl || !supabaseServiceKey) {
-            console.error('Missing required Supabase environment variables');
-            process.exit(1);
-          }
-          
-          const supabase = createClient(supabaseUrl, supabaseServiceKey);
-          
-          async function cleanupGenericContent() {
-            try {
-              // Read the SQL cleanup file
-              const fs = require('fs');
-              const sqlContent = fs.readFileSync('./sql/cleanup-generic-articles.sql', 'utf8');
-              
-              // Execute the cleanup
-              const { data, error } = await supabase.rpc('exec_sql', { sql: sqlContent });
-              
-              if (error) {
-                console.error('Error cleaning up generic content:', error);
-                process.exit(1);
-              }
-              
-              console.log('✅ Successfully cleaned up generic article content');
-            } catch (err) {
-              console.error('Unexpected error:', err);
-              process.exit(1);
-            }
-          }
-          
-          cleanupGenericContent();
-          EOF
-          
-          node cleanup-script.js
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }} # noqa
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }} # noqa
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
 
-      # 👇 Update article fields to TEXT safely (drop/recreate view first)
-      - name: Update Article Fields to TEXT (Safe Migration)
+      - name: Run SQL migration to update article fields to TEXT (safe)
         run: |
-          # Install Supabase CLI
-          curl -fsSL https://supabase.com/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          
-          # Login & link project
-          supabase login --token ${{ secrets.SUPABASE_ACCESS_TOKEN }} # noqa
-          supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} # noqa
-          
-          # Run safe SQL migration
+          supabase login --token "$SUPABASE_ACCESS_TOKEN"
+          supabase link --project-ref "$SUPABASE_PROJECT_REF"
           supabase db execute ./sql/20250920_update_article_fields_safe.sql
         env:
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }} # noqa
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }} # noqa
-
-      # 👇 Test step to verify article summary fields are populated
-      - name: Test Article Summary Fields
-        if: ${{ secrets.SUPABASE_PROJECT_REF != '' && secrets.SUPABASE_ACCESS_TOKEN != '' }}
-        run: |
-          # Install Supabase CLI
-          curl -fsSL https://supabase.com/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          
-          # Link to Supabase project
-          npx supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} # noqa
-          
-          # Run test SQL script
-          echo "🔍 Testing article summary fields..."
-          npx supabase db execute ./sql/test-article-summary-check.sql
-        env:
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }} # noqa
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }} # noqa
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

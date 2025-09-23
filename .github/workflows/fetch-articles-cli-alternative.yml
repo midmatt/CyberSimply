@@ -8,6 +8,14 @@ on:
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    env:
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v3
@@ -15,31 +23,26 @@ jobs:
           node-version: 20
       - run: npm install
       - run: node scripts/fetch-more-articles.js
-        env:
-          # Supabase configuration secrets (must exist in repo settings)
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }} # noqa
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }} # noqa
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }} # noqa
-          # API keys for data sources (must exist in repo settings)
-          NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }} # noqa
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }} # noqa
 
       # Alternative approach using Supabase CLI with proper authentication
       - name: Setup Supabase CLI
-        if: ${{ secrets.SUPABASE_PROJECT_REF != '' && secrets.SUPABASE_ACCESS_TOKEN != '' }}
-        run: |
-          curl -fsSL https://supabase.com/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+        if: ${{ env.SUPABASE_PROJECT_REF != '' && env.SUPABASE_ACCESS_TOKEN != '' }}
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
           
       - name: Test Article Summary Fields
-        if: ${{ secrets.SUPABASE_PROJECT_REF != '' && secrets.SUPABASE_ACCESS_TOKEN != '' }}
+        if: ${{ env.SUPABASE_PROJECT_REF != '' && env.SUPABASE_ACCESS_TOKEN != '' }}
         run: |
           # Login to Supabase
-          supabase login --token ${{ secrets.SUPABASE_ACCESS_TOKEN }} # noqa
+          supabase login --token "$SUPABASE_ACCESS_TOKEN"
           
           # Link to project
-          supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} # noqa
+          supabase link --project-ref "$SUPABASE_PROJECT_REF"
           
           # Run test SQL script
           echo "🔍 Testing article summary fields..."
-          npx supabase db execute ./sql/test-article-summary-check.sql
+          supabase db execute ./sql/test-article-summary-check.sql
+        env:
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
