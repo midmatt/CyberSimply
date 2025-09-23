@@ -21,34 +21,38 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: 20
+
       - name: Clean install
         run: rm -rf node_modules package-lock.json && npm install
 
       - name: Fetch and Summarize Articles with Structured JSON
         run: node scripts/fetch-more-articles.js
 
+      # ✅ Install Supabase CLI the supported way
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
       - name: Verify Supabase CLI availability
-        run: npx supabase@latest --version
+        run: supabase --version
 
       - name: Run SQL migration to update article fields to TEXT (safe)
         run: |
-          npx supabase@latest login --token "$SUPABASE_ACCESS_TOKEN"
-          npx supabase@latest link --project-ref "$SUPABASE_PROJECT_REF"
-          npx supabase@latest db execute ./sql/20250920_update_article_fields_safe.sql
+          supabase login --token "$SUPABASE_ACCESS_TOKEN"
+          supabase link --project-ref "$SUPABASE_PROJECT_REF"
+          supabase db execute ./sql/20250920_update_article_fields_safe.sql
         env:
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }} # noqa
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }} # noqa
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
       # 👇 Test step to verify article summary fields are populated
       - name: Test Article Summary Fields
         if: ${{ env.SUPABASE_PROJECT_REF != '' && env.SUPABASE_ACCESS_TOKEN != '' }}
         run: |
-          # Link to Supabase project
-          npx supabase@latest link --project-ref "$SUPABASE_PROJECT_REF"
-          
-          # Run test SQL script
+          supabase link --project-ref "$SUPABASE_PROJECT_REF"
           echo "🔍 Testing article summary fields..."
-          npx supabase@latest db execute ./sql/test-article-summary-check.sql
+          supabase db execute ./sql/test-article-summary-check.sql
         env:
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }} # noqa
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }} # noqa
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
