@@ -307,7 +307,7 @@ export function ArticleDetail() {
     what: (article as any).what,
     impact: (article as any).impact,
     takeaways: (article as any).takeaways,
-    why_this_matters: (article as any).why_this_matters
+    whyThisMatters: (article as any).whyThisMatters
   });
   
   // Log section population status
@@ -315,8 +315,8 @@ export function ArticleDetail() {
     hasWhat: !!(article as any).what,
     hasImpact: !!(article as any).impact,
     hasTakeaways: !!(article as any).takeaways,
-    hasWhyThisMatters: !!(article as any).why_this_matters,
-    allSectionsPopulated: !!((article as any).what && (article as any).impact && (article as any).takeaways && (article as any).why_this_matters)
+    hasWhyThisMatters: !!(article as any).whyThisMatters,
+    allSectionsPopulated: !!((article as any).what && (article as any).impact && (article as any).takeaways && (article as any).whyThisMatters)
   });
 
   return (
@@ -403,11 +403,11 @@ export function ArticleDetail() {
         )}
 
         {/* Why This Matters section */}
-        {(article as any).why_this_matters && (
+        {(article as any).whyThisMatters && (
           <View style={styles.summaryContainer}>
             <Text style={styles.summaryTitle}>Why This Matters</Text>
             <ExpandableSummary 
-              text={formatTextForDisplay((article as any).why_this_matters ?? "")}
+              text={formatTextForDisplay((article as any).whyThisMatters ?? "")}
               textStyle={{
                 color: colors.textPrimary,
                 lineHeight: TYPOGRAPHY.body.lineHeight * 1.3,
