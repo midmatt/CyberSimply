@@ -1,33 +1,68 @@
-{
-  "extends": "expo/tsconfig.base",
-  "compilerOptions": {
-    "strict": true,
-    "allowSyntheticDefaultImports": true,
-    "jsx": "react-jsx",
-    "forceConsistentCasingInFileNames": true,
-    "moduleResolution": "bundler",
-    "customConditions": ["react-native"],
-    "types": ["react", "react-native"],
-    "skipLibCheck": true,
-    "esModuleInterop": true,
-    "allowJs": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "incremental": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "exactOptionalPropertyTypes": false
-  },
-  "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    "declarations.d.ts"
-  ],
-  "exclude": [
-    "node_modules",
-    "babel.config.js",
-    "metro.config.js",
-    "jest.config.js"
-  ]
+import React, { useState, useCallback, useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Share, Alert, Image, Linking } from 'react-native';
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from '@expo/vector-icons';
+import { ProcessedArticle } from '../services/newsService.js';
+import { useTheme } from '../context/ThemeContext.js';
+import { formatTextForDisplay } from '../utils/textUtils.js';
+import { AdBanner } from './AdBanner.js';
+import { ExpandableSummary } from './ExpandableSummary.js';
+import { ArticleImage } from './ArticleImage.js';
+
+interface ArticleDetailProps {
+  article: ProcessedArticle;
 }
+
+export const ArticleDetail: React.FC<ArticleDetailProps> = ({ article }) => {
+  const { theme } = useTheme();
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
+
+  const handleSourceLinkPress = useCallback(() => {
+    if (article.sourceLink) {
+      Linking.openURL(article.sourceLink).catch((err: unknown) => {
+        console.error('Failed to open URL:', err);
+        Alert.alert('Error', 'Could not open the source link. The URL may be invalid or inaccessible.');
+      });
+    }
+  }, [article.sourceLink]);
+
+  useEffect(() => {
+    setSummaryExpanded(false);
+  }, [article]);
+
+  return (
+    <SafeAreaView>
+      <View style={styles.container}>
+        <ScrollView contentContainerStyle={{ padding: 16 }}>
+          <Text style={{ color: theme.text, fontSize: 24, fontWeight: 'bold' }}>
+            {formatTextForDisplay(article.title)}
+          </Text>
+          <ArticleImage uri={article.imageUrl} />
+          <ExpandableSummary
+            summary={article.summary}
+            expanded={summaryExpanded}
+            onToggle={() => setSummaryExpanded(!summaryExpanded)}
+          />
+          <View>
+            <TouchableOpacity onPress={handleSourceLinkPress} style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={{ marginRight: 8 }}>
+                <Ionicons name="link-outline" size={24} color={theme.primary} />
+              </View>
+              <Text style={{ color: theme.primary, textDecorationLine: 'underline' }}>
+                Read full article
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <AdBanner />
+        </ScrollView>
+      </View>
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+});

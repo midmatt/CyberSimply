@@ -1,4 +1,4 @@
-name: Fetch and Summarize Articles CLI Alternative
+name: Fetch and Summarize Articles
 
 on:
   schedule:
@@ -22,13 +22,15 @@ jobs:
         with:
           node-version: 20
 
-      - name: Clean install
+      # Clean install dependencies
+      - name: Install dependencies
         run: rm -rf node_modules package-lock.json && npm install
 
+      # Run the fetch + summarization script
       - name: Fetch and Summarize Articles with Structured JSON
         run: node scripts/fetch-more-articles.js
 
-      # ✅ Install Supabase CLI the supported way
+      # Install Supabase CLI the supported way
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v1
         with:
@@ -37,16 +39,17 @@ jobs:
       - name: Verify Supabase CLI availability
         run: supabase --version
 
-      - name: Run SQL migration to update article fields to TEXT (safe)
+      # Run SQL migration to update or backfill article summaries
+      - name: Run SQL migration for article summaries
         run: |
           supabase login --token "$SUPABASE_ACCESS_TOKEN"
           supabase link --project-ref "$SUPABASE_PROJECT_REF"
-          supabase db execute ./sql/20250920_update_article_fields_safe.sql
+          supabase db execute ./sql/backfill-article-summaries.sql
         env:
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
-      # 👇 Test step to verify article summary fields are populated
+      # Optional: Verify article summary fields
       - name: Test Article Summary Fields
         if: ${{ env.SUPABASE_PROJECT_REF != '' && env.SUPABASE_ACCESS_TOKEN != '' }}
         run: |
