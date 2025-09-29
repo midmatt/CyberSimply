@@ -1,4 +1,5 @@
 name: Fetch Fresh Articles
+# Updated to fix cd CyberSimply error - runs at repo root
 
 on:
   schedule:
