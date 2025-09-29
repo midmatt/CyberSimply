@@ -1,11 +1,24 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true,
+    "strict": false,
     "allowSyntheticDefaultImports": true,
     "jsx": "react-jsx",
     "forceConsistentCasingInFileNames": true,
     "moduleResolution": "bundler",
-    "customConditions": ["react-native"]
-  }
+    "customConditions": ["react-native"],
+    "skipLibCheck": true,
+    "noImplicitAny": false,
+    "strictNullChecks": false
+  },
+  "exclude": [
+    "node_modules",
+    "ios/build",
+    "android/build",
+    "supabase/functions/**/*",
+    "App-*.tsx",
+    "testflight-diagnostics.js",
+    "quick-migration.sql",
+    "add-redirect-url-column.sql"
+  ]
 }

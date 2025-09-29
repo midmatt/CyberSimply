@@ -27,7 +27,7 @@ type ArticleDetailRouteProp = RouteProp<RootStackParamList, 'ArticleDetail'>;
 
 export function ArticleDetail() {
   const navigation = useNavigation();
-  const route = useRoute<ArticleDetailRouteProp>();
+  const route = useRoute();
   const { colors } = useTheme();
   const { article, isFavorite = false } = route.params;
 
@@ -298,7 +298,9 @@ export function ArticleDetail() {
     source: article.source,
     isProcessedArticle: isProcessedArticle,
     rawSummary: isProcessedArticle ? (article as ProcessedArticle).summary : 'N/A',
-    content: content
+    content: content,
+    sourceUrl: article.sourceUrl,
+    redirectUrl: (article as any).redirect_url
   });
 
   // Debug sections for ProcessedArticle
@@ -369,7 +371,13 @@ export function ArticleDetail() {
             <View style={styles.aiSection}>
               <Text style={styles.aiSectionTitle}>What Happened</Text>
               <ExpandableSummary 
-                text={formatTextForDisplay((article as ProcessedArticle).what || `What happened: ${article.title}`)}
+                text={formatTextForDisplay(
+                  (article as ProcessedArticle).what && 
+                  !(article as ProcessedArticle).what.includes('processing error') && 
+                  !(article as ProcessedArticle).what.includes('Details not available')
+                    ? (article as ProcessedArticle).what 
+                    : `This article discusses ${article.title}. The details provide important information about cybersecurity developments.`
+                )}
                 maxLines={2}
                 textStyle={styles.aiSectionContent}
               />
@@ -379,7 +387,13 @@ export function ArticleDetail() {
             <View style={styles.aiSection}>
               <Text style={styles.aiSectionTitle}>Impact</Text>
               <ExpandableSummary 
-                text={formatTextForDisplay((article as ProcessedArticle).impact || "Impact: This event affects cybersecurity awareness and best practices.")}
+                text={formatTextForDisplay(
+                  (article as ProcessedArticle).impact && 
+                  !(article as ProcessedArticle).impact.includes('processing error') && 
+                  !(article as ProcessedArticle).impact.includes('Unable to determine')
+                    ? (article as ProcessedArticle).impact 
+                    : `This cybersecurity development impacts digital safety and security awareness. Understanding these events helps protect against similar threats.`
+                )}
                 maxLines={2}
                 textStyle={styles.aiSectionContent}
               />
@@ -389,7 +403,12 @@ export function ArticleDetail() {
             <View style={styles.aiSection}>
               <Text style={styles.aiSectionTitle}>Key Takeaways</Text>
               <ExpandableSummary 
-                text={formatTextForDisplay((article as ProcessedArticle).takeaways || "Key takeaways: Stay informed, follow best practices, and monitor new threats.")}
+                text={formatTextForDisplay(
+                  (article as ProcessedArticle).takeaways && 
+                  !(article as ProcessedArticle).takeaways.includes('processing error')
+                    ? (article as ProcessedArticle).takeaways 
+                    : `Key takeaways from this article include staying informed about cybersecurity threats, following security best practices, and monitoring for similar incidents.`
+                )}
                 maxLines={2}
                 textStyle={styles.aiSectionContent}
               />
@@ -401,7 +420,12 @@ export function ArticleDetail() {
           <View style={styles.whyItMattersContainer}>
             <Text style={styles.whyItMattersTitle}>Why This Matters</Text>
             <ExpandableSummary 
-              text={formatTextForDisplay((article as ProcessedArticle).whyThisMatters || "Why this matters: Understanding these events helps protect your digital safety.")}
+              text={formatTextForDisplay(
+                (article as ProcessedArticle).whyThisMatters && 
+                !(article as ProcessedArticle).whyThisMatters.includes('processing error')
+                  ? (article as ProcessedArticle).whyThisMatters 
+                  : `Understanding these cybersecurity events helps protect your digital safety and keeps you informed about emerging threats.`
+              )}
               maxLines={2}
               textStyle={styles.whyItMattersPoint}
             />

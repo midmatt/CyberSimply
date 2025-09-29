@@ -33,6 +33,7 @@ export interface Database {
           avatar_url: string | null;
           is_premium: boolean;
           premium_expires_at: string | null;
+          ad_free: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -43,6 +44,7 @@ export interface Database {
           avatar_url?: string | null;
           is_premium?: boolean;
           premium_expires_at?: string | null;
+          ad_free?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -53,6 +55,7 @@ export interface Database {
           avatar_url?: string | null;
           is_premium?: boolean;
           premium_expires_at?: string | null;
+          ad_free?: boolean;
           created_at?: string;
           updated_at?: string;
         };

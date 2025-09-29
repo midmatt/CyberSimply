@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useAdFree } from '../context/AdFreeContext';
+import { useAdManager } from '../services/adManager';
 import { TYPOGRAPHY, SPACING } from '../constants';
 import { AD_CONFIG } from '../constants/adConfig';
 
@@ -29,9 +30,21 @@ export function AdMobBannerComponent({
 }: AdMobBannerProps) {
   const { colors } = useTheme();
   const { isAdFree } = useAdFree();
+  const { shouldShowAds, logAdDecision } = useAdManager();
   const [isVisible, setIsVisible] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Log ad decision for debugging
+  useEffect(() => {
+    logAdDecision('AdMobBanner', shouldShowAds);
+  }, [shouldShowAds, logAdDecision]);
+
+  // Don't render if user has ad-free access - COMPLETE HIDE
+  if (!shouldShowAds) {
+    console.log('🚫 [AdMobBanner] Completely hidden - user has ad-free access');
+    return null;
+  }
 
   const styles = StyleSheet.create({
     container: {
@@ -136,8 +149,9 @@ export function AdMobBannerComponent({
     setError('Ad failed to load');
   };
 
-  // Don't show ads if user has ad-free access
-  if (isAdFree) {
+  // Don't show ads if user has ad-free access - COMPLETE HIDE
+  if (!shouldShowAds) {
+    console.log('🚫 [AdMobBanner] Completely hidden - user has ad-free access');
     return null;
   }
 

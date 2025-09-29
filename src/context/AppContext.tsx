@@ -1,7 +1,5 @@
 import React, { createContext, useContext, useReducer, ReactNode, useCallback, useEffect } from 'react';
-import { ThemeProvider } from './ThemeContext';
 import { NewsProvider } from './NewsContext';
-import { NewsService } from '../services/api';
 import { LocalImageService } from '../services/localImageService';
 import { Article, ArticleCategory } from '../types';
 
@@ -248,20 +246,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [state.articles]);
 
   return (
-    <ThemeProvider>
-      <NewsProvider>
-        <AppContext.Provider value={{
-          state,
-          fetchNews,
-          loadMoreNews,
-          toggleFavorite,
-          updateSettings,
-          getArticlesByCategory,
-        }}>
-          {children}
-        </AppContext.Provider>
-      </NewsProvider>
-    </ThemeProvider>
+    <NewsProvider>
+      <AppContext.Provider value={{
+        state,
+        fetchNews,
+        loadMoreNews,
+        toggleFavorite,
+        updateSettings,
+        getArticlesByCategory,
+      }}>
+        {children}
+      </AppContext.Provider>
+    </NewsProvider>
   );
 }
 

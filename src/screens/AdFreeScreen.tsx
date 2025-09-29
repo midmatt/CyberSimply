@@ -11,24 +11,25 @@ import {
   Platform,
   StatusBar,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useSupabase } from '../context/SupabaseContext';
 import { useNavigation } from '@react-navigation/native';
-import { iapService, AdFreeProduct } from '../services/iapService';
+import { storeKitIAPService, AdFreeProduct, PRODUCT_IDS } from '../services/storeKitIAPService';
+import { useAdFree } from '../context/AdFreeContext';
 import { TYPOGRAPHY, SPACING } from '../constants';
 
 export function AdFreeScreen() {
   const { colors, isDark } = useTheme();
   const { authState } = useSupabase();
+  const { isAdFree, refreshAdFreeStatus } = useAdFree();
   const navigation = useNavigation();
-  const insets = useSafeAreaInsets();
   
-  const [isAdFree, setIsAdFree] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [products, setProducts] = useState<AdFreeProduct[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
 
   useEffect(() => {
     initializeIAP();
@@ -36,69 +37,124 @@ export function AdFreeScreen() {
 
   const initializeIAP = async () => {
     try {
-      // Initialize IAP service
-      const initResult = await iapService.initialize();
+      // Initialize StoreKit IAP service
+      const initResult = await storeKitIAPService.initialize();
       if (initResult.success) {
         // Load products
-        const loadedProducts = iapService.getAdFreeProducts();
+        const loadedProducts = storeKitIAPService.getProducts();
         setProducts(loadedProducts);
         
-        // Check ad-free status
-        await checkAdFreeStatus();
+        // Refresh ad-free status from context
+        await refreshAdFreeStatus();
       } else {
-        console.error('IAP initialization failed:', initResult.error);
+        console.error('StoreKit IAP initialization failed:', initResult.error);
       }
     } catch (error) {
-      console.error('Error initializing IAP:', error);
+      console.error('Error initializing StoreKit IAP:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const checkAdFreeStatus = async () => {
-    try {
-      const result = await iapService.checkAdFreeStatus();
-      setIsAdFree(result.isAdFree || false);
-    } catch (error) {
-      console.error('Error checking ad-free status:', error);
-    }
-  };
+  // Ad-free status is now managed by the AdFreeContext
 
-  const handlePurchase = async () => {
+  const handlePurchase = async (productId: string) => {
     if (!authState.isAuthenticated) {
       Alert.alert('Sign In Required', 'Please sign in to purchase ad-free access.');
       return;
     }
 
+    const product = storeKitIAPService.getProduct(productId);
+    if (!product) {
+      Alert.alert('Error', 'Product not found.');
+      return;
+    }
+
+    // Check if user already has ad-free access
+    if (isAdFree) {
+      Alert.alert(
+        'Already Ad-Free',
+        'You already have ad-free access! Use "Restore Purchases" if you need to restore your purchase.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     Alert.alert(
       'Go Ad-Free',
-      'Remove all ads forever and support the development of CyberSafe News for just $9.99.',
+      `${product.description}\n\nPrice: ${product.localizedPrice}`,
       [
         { text: 'Cancel', style: 'cancel' },
         { 
           text: 'Purchase', 
-          onPress: processPayment
+          onPress: () => processPayment(productId)
         }
       ]
     );
   };
 
-  const processPayment = async () => {
+  const processPayment = async (productId: string) => {
     setIsProcessing(true);
+    setSelectedProduct(productId);
+    
     try {
-      const result = await iapService.presentAdFreePayment();
+      const result = await storeKitIAPService.purchaseProduct(productId);
       
       if (result.success) {
         Alert.alert(
           'Success!',
-          'Thank you for your purchase! You now have ad-free access to CyberSafe News.',
-          [{ text: 'OK', onPress: () => setIsAdFree(true) }]
+          'Thank you for your purchase! You now have ad-free access to CyberSimply.',
+          [{ text: 'OK', onPress: async () => {
+            // Refresh ad-free status from context
+            await refreshAdFreeStatus();
+            setSelectedProduct(null);
+          }}]
         );
       } else {
-        Alert.alert('Purchase Failed', result.error || 'Purchase could not be processed. Please try again.');
+        // Handle specific error cases
+        if (result.error?.includes('already have ad-free access') || 
+            result.error?.includes('already has an active subscription') ||
+            result.error?.includes('lifetime ad-free access')) {
+          Alert.alert(
+            'Already Ad-Free',
+            result.error,
+            [{ text: 'OK', onPress: async () => {
+              // Refresh status to show current state
+              await refreshAdFreeStatus();
+            }}]
+          );
+        } else {
+          Alert.alert('Purchase Failed', result.error || 'Purchase could not be processed. Please try again.');
+        }
       }
     } catch (error) {
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
+      setIsProcessing(false);
+      setSelectedProduct(null);
+    }
+  };
+
+  const handleRestorePurchases = async () => {
+    setIsProcessing(true);
+    try {
+      const result = await storeKitIAPService.restorePurchases();
+      
+      if (result.success) {
+        if (result.restoredPurchases && result.restoredPurchases.length > 0) {
+          Alert.alert(
+            'Purchases Restored',
+            `Successfully restored ${result.restoredPurchases.length} purchase(s).`,
+            [{ text: 'OK', onPress: () => refreshAdFreeStatus() }]
+          );
+        } else {
+          Alert.alert('No Purchases Found', 'No previous purchases were found to restore.');
+        }
+      } else {
+        Alert.alert('Restore Failed', result.error || 'Failed to restore purchases. Please try again.');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'An unexpected error occurred while restoring purchases.');
     } finally {
       setIsProcessing(false);
     }
@@ -113,27 +169,26 @@ export function AdFreeScreen() {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingHorizontal: SPACING.lg,
-      paddingTop: SPACING.lg,
-      paddingBottom: SPACING.md,
+      paddingHorizontal: SPACING.md,
+      paddingVertical: SPACING.sm,
       backgroundColor: colors.background,
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
-      minHeight: 60,
+      height: 44, // Compact header height
     },
     backButton: {
-      padding: SPACING.sm,
+      padding: SPACING.xs,
       backgroundColor: colors.surface,
-      borderRadius: 20,
+      borderRadius: 16,
       borderWidth: 1,
       borderColor: colors.border,
       shadowColor: colors.shadow,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.3,
-      shadowRadius: 4,
-      elevation: 4,
-      minWidth: 40,
-      minHeight: 40,
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.2,
+      shadowRadius: 2,
+      elevation: 2,
+      width: 32,
+      height: 32,
       justifyContent: 'center',
       alignItems: 'center',
       marginRight: SPACING.sm,
@@ -142,9 +197,10 @@ export function AdFreeScreen() {
       ...TYPOGRAPHY.h3,
       color: colors.text,
       fontWeight: '600',
+      fontSize: 18, // Slightly smaller title
     },
     headerSpacer: {
-      width: 40,
+      width: 32, // Match back button width
     },
     scrollView: {
       flex: 1,
@@ -153,25 +209,29 @@ export function AdFreeScreen() {
     content: {
       padding: SPACING.lg,
       backgroundColor: colors.background,
+      flexGrow: 1,
     },
     header: {
       alignItems: 'center',
       marginBottom: SPACING.xl,
+      paddingTop: SPACING.lg, // Add some top padding for better spacing
     },
     icon: {
-      marginBottom: SPACING.md,
+      marginBottom: SPACING.lg, // Increased margin for better spacing
     },
     title: {
       ...TYPOGRAPHY.h1,
       color: colors.text,
       textAlign: 'center',
-      marginBottom: SPACING.sm,
+      marginBottom: SPACING.md, // Increased margin
+      fontSize: 28, // Slightly smaller for better proportion
     },
     subtitle: {
       ...TYPOGRAPHY.body,
       color: colors.textSecondary,
       textAlign: 'center',
       lineHeight: 24,
+      paddingHorizontal: SPACING.sm, // Add horizontal padding for better text flow
     },
     statusContainer: {
       backgroundColor: colors.cardBackground,
@@ -193,26 +253,47 @@ export function AdFreeScreen() {
       color: colors.textSecondary,
       textAlign: 'center',
     },
+    activeStatusDetails: {
+      marginTop: SPACING.md,
+      width: '100%',
+    },
+    statusDetailItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: SPACING.xs,
+      paddingHorizontal: SPACING.sm,
+    },
+    statusDetailText: {
+      ...TYPOGRAPHY.body,
+      color: colors.text,
+      marginLeft: SPACING.sm,
+      fontSize: 14,
+    },
     benefitsContainer: {
       marginBottom: SPACING.xl,
+      paddingHorizontal: SPACING.xs, // Consistent horizontal padding
     },
     benefitsTitle: {
       ...TYPOGRAPHY.h3,
       color: colors.text,
-      marginBottom: SPACING.md,
+      marginBottom: SPACING.lg, // Increased margin for better spacing
+      textAlign: 'center', // Center the title
     },
     benefitItem: {
       flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: SPACING.sm,
+      alignItems: 'flex-start', // Align to top for better text alignment
+      marginBottom: SPACING.md, // Increased margin for better spacing
+      paddingHorizontal: SPACING.xs, // Consistent horizontal padding
     },
     benefitIcon: {
-      marginRight: SPACING.sm,
+      marginRight: SPACING.md, // Increased margin for better spacing
+      marginTop: 2, // Slight top margin to align with first line of text
     },
     benefitText: {
       ...TYPOGRAPHY.body,
       color: colors.text,
       flex: 1,
+      lineHeight: 22, // Consistent line height
     },
     productContainer: {
       backgroundColor: colors.cardBackground,
@@ -265,6 +346,10 @@ export function AdFreeScreen() {
     secondaryButtonText: {
       color: colors.accent,
     },
+    buttonSelected: {
+      backgroundColor: colors.accent + '80',
+      borderColor: colors.accent,
+    },
     loadingContainer: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -289,29 +374,26 @@ export function AdFreeScreen() {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+      <SafeAreaView style={styles.container}>
         <StatusBar 
           barStyle={isDark ? "light-content" : "dark-content"} 
           backgroundColor={colors.background} 
-          translucent 
         />
-        <View style={{ paddingTop: insets.top, flex: 1, backgroundColor: colors.background }}>
-          <View style={[styles.headerContainer, { backgroundColor: colors.background }]}>
-            <TouchableOpacity 
-              style={styles.backButton} 
-              onPress={() => navigation.goBack()}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="arrow-back" size={24} color={colors.text} />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Go Ad-Free</Text>
-            <View style={styles.headerSpacer} />
-          </View>
-          <View style={styles.content}>
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color={colors.accent} />
-              <Text style={styles.loadingText}>Loading...</Text>
-            </View>
+        <View style={styles.headerContainer}>
+          <TouchableOpacity 
+            style={styles.backButton} 
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="arrow-back" size={20} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Go Ad-Free</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        <View style={styles.content}>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color={colors.accent} />
+            <Text style={styles.loadingText}>Loading...</Text>
           </View>
         </View>
       </SafeAreaView>
@@ -319,28 +401,26 @@ export function AdFreeScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeAreaView style={styles.container}>
       <StatusBar 
         barStyle={isDark ? "light-content" : "dark-content"} 
         backgroundColor={colors.background} 
-        translucent 
       />
       <KeyboardAvoidingView 
-        style={{ flex: 1, backgroundColor: colors.background }} 
+        style={styles.container} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={{ paddingTop: insets.top, flex: 1, backgroundColor: colors.background }}>
-          <View style={[styles.headerContainer, { backgroundColor: colors.background }]}>
-            <TouchableOpacity 
-              style={styles.backButton} 
-              onPress={() => navigation.goBack()}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="arrow-back" size={24} color={colors.text} />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Go Ad-Free</Text>
-            <View style={styles.headerSpacer} />
-          </View>
+        <View style={styles.headerContainer}>
+          <TouchableOpacity 
+            style={styles.backButton} 
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="arrow-back" size={20} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Go Ad-Free</Text>
+          <View style={styles.headerSpacer} />
+        </View>
           
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
       <View style={styles.header}>
@@ -374,10 +454,26 @@ export function AdFreeScreen() {
         </Text>
         <Text style={styles.statusText}>
           {isAdFree 
-            ? 'All advertisements have been removed from your experience.'
+            ? 'All advertisements have been removed from your experience. Thank you for supporting CyberSimply!'
             : 'Purchase ad-free access to remove all advertisements.'
           }
         </Text>
+        {isAdFree && (
+          <View style={styles.activeStatusDetails}>
+            <View style={styles.statusDetailItem}>
+              <Ionicons name="shield-checkmark" size={16} color="#34C759" />
+              <Text style={styles.statusDetailText}>Banner ads removed</Text>
+            </View>
+            <View style={styles.statusDetailItem}>
+              <Ionicons name="shield-checkmark" size={16} color="#34C759" />
+              <Text style={styles.statusDetailText}>Interstitial ads removed</Text>
+            </View>
+            <View style={styles.statusDetailItem}>
+              <Ionicons name="shield-checkmark" size={16} color="#34C759" />
+              <Text style={styles.statusDetailText}>Faster app performance</Text>
+            </View>
+          </View>
+        )}
       </View>
 
       {!isAdFree && (
@@ -407,29 +503,46 @@ export function AdFreeScreen() {
           </View>
 
           {products.map((product) => (
-            <View key={product.id} style={styles.productContainer}>
+            <View key={product.productId} style={styles.productContainer}>
               <View style={styles.productHeader}>
-                <Text style={styles.productName}>{product.name}</Text>
-                <Text style={styles.productPrice}>${product.price}</Text>
+                <Text style={styles.productName}>{product.title}</Text>
+                <Text style={styles.productPrice}>{product.localizedPrice}</Text>
               </View>
               <Text style={styles.productDescription}>{product.description}</Text>
               
               <TouchableOpacity
-                style={[styles.button, isProcessing && styles.buttonDisabled]}
-                onPress={handlePurchase}
+                style={[
+                  styles.button, 
+                  isProcessing && styles.buttonDisabled,
+                  selectedProduct === product.productId && styles.buttonSelected
+                ]}
+                onPress={() => handlePurchase(product.productId)}
                 disabled={isProcessing}
               >
-                {isProcessing ? (
+                {isProcessing && selectedProduct === product.productId ? (
                   <View style={styles.loadingContainer}>
                     <ActivityIndicator size="small" color={colors.background} />
                     <Text style={styles.loadingText}>Processing...</Text>
                   </View>
                 ) : (
-                  <Text style={styles.buttonText}>Purchase Now</Text>
+                  <Text style={styles.buttonText}>
+                    {product.type === 'lifetime' ? 'Buy Lifetime' : 'Subscribe Monthly'}
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>
           ))}
+
+          {/* Restore Purchases Button */}
+          <TouchableOpacity
+            style={[styles.button, styles.secondaryButton]}
+            onPress={handleRestorePurchases}
+            disabled={isProcessing}
+          >
+            <Text style={[styles.buttonText, styles.secondaryButtonText]}>
+              Restore Purchases
+            </Text>
+          </TouchableOpacity>
         </>
       )}
 
@@ -440,9 +553,8 @@ export function AdFreeScreen() {
             : 'Secure payment processing by Apple. Your payment information is handled securely by Apple.'
           }
         </Text>
-          </View>
-          </ScrollView>
         </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

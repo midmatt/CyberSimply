@@ -10,23 +10,20 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { StackNavigationProp } from '@react-navigation/stack';
 import { NewsCard } from '../components/NewsCard';
 import { SearchBar } from '../components/SearchBar';
 import { AdBanner } from '../components/AdBanner';
+import { PinnedBannerAd } from '../components/PinnedBannerAd';
 import { useNews } from '../context/NewsContext';
 import { useTheme } from '../context/ThemeContext';
 import { ProcessedArticle } from '../services/newsService';
-import { RootStackParamList } from '../types';
 import { COLORS, TYPOGRAPHY, SPACING } from '../constants';
 import { Ionicons } from '@expo/vector-icons';
 
-type NavigationProp = StackNavigationProp<RootStackParamList>;
-
 export function HomeScreen() {
-  const navigation = useNavigation<NavigationProp>();
+  const navigation = useNavigation();
   const { colors } = useTheme();
-  const { state: newsState, refreshNews, getRecentArticles } = useNews();
+  const { state: newsState, refreshNews, loadMoreNews, getCategoryCounts } = useNews();
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   
@@ -123,45 +120,26 @@ export function HomeScreen() {
     console.log('Toggle favorite:', articleId);
   }, []);
 
-  // Get recent articles (within the last week)
-  const [recentArticles, setRecentArticles] = useState<ProcessedArticle[]>([]);
-  
+  // Load category counts when component mounts
   useEffect(() => {
-    const loadRecentArticles = async () => {
-      try {
-        console.log('HomeScreen: Loading recent articles...');
-        const articles = await getRecentArticles();
-        setRecentArticles(articles);
-        console.log(`HomeScreen: Loaded ${articles.length} recent articles`);
-        console.log('HomeScreen: Articles data:', articles.slice(0, 2)); // Log first 2 articles for debugging
-      } catch (error) {
-        console.error('Failed to load recent articles:', error);
-        setRecentArticles([]);
-      }
-    };
-    
-    // Only load articles after initialization is complete
     if (newsState.isInitialized) {
-      console.log('HomeScreen: Initialization complete, loading recent articles');
-      loadRecentArticles();
-    } else {
-      console.log('HomeScreen: Waiting for initialization...');
+      getCategoryCounts();
     }
-  }, [getRecentArticles, newsState.isInitialized]);
-
+  }, [newsState.isInitialized, getCategoryCounts]);
+  
   // Filter articles based on search query
   const filteredArticles = useMemo(() => {
     if (!searchQuery.trim()) {
-      return recentArticles;
+      return newsState.articles;
     }
     
     const query = searchQuery.toLowerCase();
-    return recentArticles.filter(article => 
+    return newsState.articles.filter(article => 
       article.title.toLowerCase().includes(query) ||
       article.summary.toLowerCase().includes(query) ||
-      article.category.toLowerCase().includes(query)
+      article.source.toLowerCase().includes(query)
     );
-  }, [searchQuery, recentArticles]);
+  }, [searchQuery, newsState.articles]);
 
   const renderArticle = useCallback(({ item }: { item: ProcessedArticle }) => {
     return (
@@ -308,21 +286,44 @@ export function HomeScreen() {
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={true}
-        maxToRenderPerBatch={5}
-        windowSize={10}
-        initialNumToRender={5}
+        maxToRenderPerBatch={10}
+        windowSize={21}
+        initialNumToRender={10}
+        onEndReached={loadMoreNews}
+        onEndReachedThreshold={0.5}
         ListFooterComponent={() => (
           <View style={{ paddingVertical: SPACING.lg, alignItems: 'center' }}>
+            {newsState.loadingMore && (
+              <ActivityIndicator size="small" color={colors.primary} style={{ marginBottom: SPACING.md }} />
+            )}
             <Text style={styles.lastUpdated}>
               Last updated: {newsState.lastUpdated ? newsState.lastUpdated.toLocaleTimeString() : 'Never'}
             </Text>
-            <Text style={styles.lastUpdated}>{filteredArticles.length} recent articles</Text>
             <Text style={styles.lastUpdated}>
-              Total stored: {newsState.totalStoredArticles} articles ({newsState.storageSize})
+              Showing {filteredArticles.length} of {newsState.totalArticles || 0} articles
             </Text>
+            <Text style={styles.lastUpdated}>
+              📊 Categories: {newsState.categoryCounts.cybersecurity} cybersecurity, {newsState.categoryCounts.hacking} hacking, {newsState.categoryCounts.general} general
+            </Text>
+            <Text style={styles.lastUpdated}>
+              📁 Archived: {newsState.categoryCounts.archived} articles (older than 2 weeks)
+            </Text>
+            {!newsState.hasMore && newsState.totalArticles > 0 && (
+              <Text style={[styles.lastUpdated, { color: colors.textSecondary, fontStyle: 'italic', marginTop: SPACING.sm }]}>
+                No more articles to load
+              </Text>
+            )}
+            {newsState.error && (
+              <Text style={[styles.lastUpdated, { color: colors.error || '#ff4444', marginTop: SPACING.sm }]}>
+                ⚠️ {newsState.error}
+              </Text>
+            )}
           </View>
         )}
       />
+      
+      {/* Pinned Banner Ad at bottom */}
+      <PinnedBannerAd />
     </SafeAreaView>
   );
 }

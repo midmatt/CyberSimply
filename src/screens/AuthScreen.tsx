@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,8 +9,10 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { useSupabase } from '../context/SupabaseContext';
 import { TYPOGRAPHY, SPACING } from '../constants';
@@ -28,6 +30,31 @@ export function AuthScreen() {
   const [displayName, setDisplayName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [stayLoggedIn, setStayLoggedIn] = useState(false);
+
+  // Load Stay Logged In preference on component mount
+  useEffect(() => {
+    loadStayLoggedInPreference();
+  }, []);
+
+  const loadStayLoggedInPreference = async () => {
+    try {
+      const preference = await AsyncStorage.getItem('stay_logged_in');
+      setStayLoggedIn(preference === 'true');
+    } catch (error) {
+      console.error('Error loading stay logged in preference:', error);
+    }
+  };
+
+  const handleStayLoggedInToggle = async (value: boolean) => {
+    try {
+      await AsyncStorage.setItem('stay_logged_in', value.toString());
+      setStayLoggedIn(value);
+    } catch (error) {
+      console.error('Error saving stay logged in preference:', error);
+      Alert.alert('Error', 'Failed to update preference');
+    }
+  };
 
   const handleSignIn = async () => {
     if (!email || !password) {
@@ -234,6 +261,34 @@ export function AuthScreen() {
       color: colors.textSecondary,
       marginLeft: SPACING.sm,
     },
+    stayLoggedInContainer: {
+      marginBottom: SPACING.md,
+    },
+    stayLoggedInRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      backgroundColor: colors.cardBackground,
+      borderRadius: 8,
+      padding: SPACING.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    stayLoggedInInfo: {
+      flex: 1,
+      marginRight: SPACING.md,
+    },
+    stayLoggedInLabel: {
+      ...TYPOGRAPHY.body,
+      color: colors.text,
+      fontWeight: '600',
+      marginBottom: SPACING.xs,
+    },
+    stayLoggedInDescription: {
+      ...TYPOGRAPHY.caption,
+      color: colors.textSecondary,
+      lineHeight: TYPOGRAPHY.caption.lineHeight * 1.2,
+    },
   });
 
   return (
@@ -325,6 +380,27 @@ export function AuthScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
               />
+            </View>
+          )}
+
+          {/* Stay Logged In Toggle - only show for sign in mode */}
+          {mode === 'signin' && (
+            <View style={styles.stayLoggedInContainer}>
+              <View style={styles.stayLoggedInRow}>
+                <View style={styles.stayLoggedInInfo}>
+                  <Text style={styles.stayLoggedInLabel}>Stay Logged In</Text>
+                  <Text style={styles.stayLoggedInDescription}>
+                    Keep me signed in when I restart the app
+                  </Text>
+                </View>
+                <Switch
+                  value={stayLoggedIn}
+                  onValueChange={handleStayLoggedInToggle}
+                  trackColor={{ false: colors.border, true: colors.accent + '40' }}
+                  thumbColor={stayLoggedIn ? colors.accent : colors.textSecondary}
+                  disabled={isLoading}
+                />
+              </View>
             </View>
           )}
 

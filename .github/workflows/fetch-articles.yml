@@ -22,14 +22,10 @@ jobs:
         cache: 'npm'
         
     - name: Install dependencies
-      run: |
-        cd CyberSimply
-        npm install
+      run: npm install
         
     - name: Fetch and store articles
-      run: |
-        cd CyberSimply
-        node fetch-more-articles.js
+      run: node fetch-more-articles.js
       env:
         NODE_ENV: production
         

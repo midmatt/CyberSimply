@@ -1,182 +1,180 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { View, Text, ActivityIndicator, useColorScheme, Image } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import RNBootSplash from 'react-native-bootsplash';
-import * as Font from 'expo-font';
-import { Asset } from 'expo-asset';
-import { AppProvider } from './src/context/AppContext';
-import { AdFreeProvider } from './src/context/AdFreeContext';
-import { SupabaseProvider } from './src/context/SupabaseContext';
+import { View, Text, ActivityIndicator, StyleSheet, Platform } from 'react-native';
+import { StartupOrchestrator, createBasicStartupSteps, createServiceStartupSteps, createHeavyStartupSteps } from './src/app/startup/startupOrchestrator';
+import { SafeSplashScreen } from './src/app/startup/splashDetector';
+
+// Import context providers
 import { ThemeProvider } from './src/context/ThemeContext';
-import AppNavigator from './src/navigation/AppNavigator';
+import { AppProvider } from './src/context/AppContext';
+import { SupabaseProvider } from './src/context/SupabaseContext';
+import { AdFreeProvider } from './src/context/AdFreeContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
-import { adService } from './src/services/adService';
-import { notificationService } from './src/services/notificationService';
-import { iapService } from './src/services/iapService';
-import { NewsApiService } from './src/services/newsApiService';
-import { authService } from './src/services/authService';
-import { AD_CONFIG } from './src/constants/adConfig';
-import { useTheme } from './src/context/ThemeContext';
+import AppNavigator from './src/navigation/AppNavigator';
 
 
+
+interface AppState {
+  isInitialized: boolean;
+  isLoading: boolean;
+  error: string | null;
+  progress: string;
+}
 
 export default function App() {
-  const [isInitialized, setIsInitialized] = useState(false);
-  const [initProgress, setInitProgress] = useState('');
+  const [appState, setAppState] = useState<AppState>({
+    isInitialized: false,
+    isLoading: true,
+    error: null,
+    progress: 'Starting app...'
+  });
 
-  useEffect(() => {
-    async function prepare() {
-      const startTime = Date.now();
-      const MAX_INIT_TIME = 10000; // 10 seconds max initialization time
-      
-      try {
-        console.log('🚀 App: Starting initialization...');
-
-        // 1. Load fonts (with timeout)
-        setInitProgress('Loading fonts...');
-        console.log('📝 Loading fonts...');
-        await Promise.race([
-          Font.loadAsync({
-            // Add your custom fonts here if you have any
-            // Inter: require('./assets/fonts/Inter-Regular.ttf'),
-            // InterBold: require('./assets/fonts/Inter-Bold.ttf'),
-          }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Font loading timeout')), 3000))
-        ]);
-        console.log('✅ Fonts loaded');
-
-        // 2. Preload images (with timeout)
-        setInitProgress('Loading assets...');
-        console.log('🖼️ Preloading assets...');
-        await Promise.race([
-          Asset.loadAsync([
-            require('./assets/icon.png'),
-            require('./assets/splash-dark.png'),
-            require('./assets/splash-light.png'),
-          ]),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Asset loading timeout')), 3000))
-        ]);
-        console.log('✅ Assets preloaded');
-
-        // 3. Initialize IAP service (with timeout)
-        try {
-          setInitProgress('Initializing IAP...');
-          console.log('🛒 Initializing IAP service...');
-          const iapResult = await Promise.race([
-            iapService.initialize(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('IAP timeout')), 5000))
-          ]);
-          if (iapResult.success) {
-            console.log('✅ IAP service initialized successfully');
-          } else {
-            console.warn('⚠️ IAP service initialization failed:', iapResult.error);
-          }
-        } catch (iapError) {
-          console.warn('⚠️ IAP service initialization failed (non-critical):', iapError);
-        }
-
-        // 4. Initialize ad service with error handling (with timeout)
-        try {
-          if (AD_CONFIG.ADMOB.SHOW_BANNER_ADS || AD_CONFIG.ADMOB.SHOW_INTERSTITIAL_ADS) {
-            setInitProgress('Initializing ads...');
-            console.log('📺 Initializing ad service...');
-            await Promise.race([
-              adService.initialize(),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('Ad service timeout')), 5000))
-            ]);
-            console.log('✅ Ad service initialized successfully');
-          }
-        } catch (adError) {
-          console.warn('⚠️ Ad service initialization failed (non-critical):', adError);
-        }
-
-        // 5. Initialize notification service with error handling (with timeout)
-        try {
-          setInitProgress('Initializing notifications...');
-          console.log('🔔 Initializing notification service...');
-          const notificationResult = await Promise.race([
-            notificationService.initialize(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Notification service timeout')), 5000))
-          ]);
-          if (notificationResult.success) {
-            console.log('✅ Notification service initialized successfully');
-          } else {
-            console.warn('⚠️ Notification service initialization failed:', notificationResult.error);
-          }
-        } catch (notificationError) {
-          console.warn('⚠️ Notification service initialization failed (non-critical):', notificationError);
-        }
-
-        // 6. Wait for Supabase session restoration (with timeout)
-        try {
-          setInitProgress('Connecting to database...');
-          console.log('🔐 Waiting for Supabase session restoration...');
-          let attempts = 0;
-          const maxAttempts = 20; // 2 seconds max wait
-          while (authService.getAuthState().isLoading && attempts < maxAttempts) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-            attempts++;
-          }
-          console.log('✅ Supabase session restoration completed');
-        } catch (authError) {
-          console.warn('⚠️ Supabase session restoration failed (non-critical):', authError);
-        }
-
-        // 7. Fetch initial news articles (with timeout)
-        try {
-          setInitProgress('Loading articles...');
-          console.log('📰 Fetching initial news articles...');
-          const articles = await Promise.race([
-            NewsApiService.fetchLatestNews(1),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('News fetch timeout')), 8000))
-          ]);
-          console.log(`✅ Fetched ${articles.length} initial articles`);
-        } catch (newsError) {
-          console.warn('⚠️ Failed to fetch initial articles (non-critical):', newsError);
-        }
-
-        console.log('🎉 App initialization completed successfully');
-      } catch (e) {
-        console.error('❌ App initialization error:', e);
-      } finally {
-        // Always hide splash screen and show app, even if some services failed
-        console.log('👋 Hiding splash screen...');
-        await RNBootSplash.hide({ fade: true });
-        console.log('✅ Splash screen hidden successfully');
-        setIsInitialized(true);
-      }
-    }
-    
-    // Add overall timeout to prevent infinite loading
-    const timeoutId = setTimeout(() => {
-      console.warn('⚠️ App initialization timeout, forcing app to load...');
-      RNBootSplash.hide({ fade: true });
-      setIsInitialized(true);
-    }, 15000); // 15 seconds total timeout
-    
-    prepare().finally(() => {
-      clearTimeout(timeoutId);
-    });
+  const updateProgress = useCallback((progress: string) => {
+    setAppState(prev => ({ ...prev, progress }));
   }, []);
 
-  // Show loading screen while initializing to prevent white screen
-  if (!isInitialized) {
+  const setError = useCallback((error: string) => {
+    setAppState(prev => ({ ...prev, error, isLoading: false }));
+  }, []);
+
+  const setInitialized = useCallback(() => {
+    setAppState(prev => ({ ...prev, isInitialized: true, isLoading: false, error: null }));
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const splashScreen = new SafeSplashScreen();
+
+    async function initializeApp() {
+      try {
+        console.log('🚀 [App] Starting robust initialization...');
+        
+        // Prevent splash screen from auto-hiding
+        await splashScreen.preventAutoHide();
+        
+        // Create startup orchestrator
+        const orchestrator = new StartupOrchestrator();
+        
+        // Add basic startup steps (critical for first render)
+        updateProgress('Initializing core systems...');
+        const basicSteps = createBasicStartupSteps();
+        basicSteps.forEach(step => orchestrator.addStep(step));
+        
+        // Execute basic steps first
+        const basicResult = await orchestrator.execute();
+        console.log('🚀 [App] Basic initialization result:', basicResult);
+        
+        if (!isMounted) return;
+        
+        // Hide splash screen as soon as basic steps are done
+        updateProgress('Preparing interface...');
+        await orchestrator.hideSplashScreen();
+        
+        if (!isMounted) return;
+        
+        // Mark as initialized for first render
+        setInitialized();
+        
+        // Continue with service initialization in background
+        updateProgress('Loading services...');
+        const serviceSteps = createServiceStartupSteps();
+        serviceSteps.forEach(step => orchestrator.addStep(step));
+        
+        const serviceResult = await orchestrator.execute();
+        console.log('🚀 [App] Service initialization result:', serviceResult);
+        
+        if (!isMounted) return;
+        
+        // Continue with heavy initialization in background
+        updateProgress('Loading additional features...');
+        const heavySteps = createHeavyStartupSteps();
+        heavySteps.forEach(step => orchestrator.addStep(step));
+        
+        const heavyResult = await orchestrator.execute();
+        console.log('🚀 [App] Heavy initialization result:', heavyResult);
+        
+        console.log('🎉 [App] All initialization completed');
+        
+      } catch (error) {
+        console.error('❌ [App] Initialization error:', error);
+        
+        if (isMounted) {
+          // Even if initialization fails, show the app
+          try {
+            await splashScreen.hide();
+          } catch (hideError) {
+            console.warn('Failed to hide splash screen:', hideError);
+          }
+          
+          // Set a more user-friendly error message
+          const errorMessage = error instanceof Error 
+            ? `Initialization failed: ${error.message}` 
+            : 'Initialization failed. The app will continue with limited functionality.';
+          
+          setError(errorMessage);
+        }
+      }
+    }
+
+    // Set up watchdog timeout
+    const watchdogTimeout = setTimeout(() => {
+      console.warn('⚠️ [App] Watchdog timeout - forcing app to load');
+      if (isMounted) {
+        splashScreen.hide().then(() => {
+          setInitialized();
+        });
+      }
+    }, 4000); // 4 second watchdog
+
+    // Start initialization
+    initializeApp().finally(() => {
+      clearTimeout(watchdogTimeout);
+    });
+
+    return () => {
+      isMounted = false;
+      clearTimeout(watchdogTimeout);
+    };
+  }, [updateProgress, setError, setInitialized]);
+
+  // Show loading screen while initializing
+  if (appState.isLoading) {
     return (
-      <GestureHandlerRootView style={{ flex: 1, backgroundColor: '#000000' }}>
+      <GestureHandlerRootView style={styles.loadingContainer}>
         <SafeAreaProvider>
           <StatusBar style="light" backgroundColor="#000000" />
-          <View style={{ 
-            flex: 1, 
-            backgroundColor: '#000000', 
-            justifyContent: 'center', 
-            alignItems: 'center' 
-          }}>
+          <View style={styles.loadingContent}>
             <ActivityIndicator size="large" color="#FFFFFF" />
-            <Text style={{ color: '#FFFFFF', marginTop: 20, fontSize: 16 }}>
-              {initProgress || 'Loading CyberSimply...'}
+            <Text style={styles.loadingText}>
+              {appState.progress}
+            </Text>
+            {appState.error && (
+              <Text style={styles.errorText}>
+                {appState.error}
+              </Text>
+            )}
+          </View>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    );
+  }
+
+  // Show error screen if initialization failed
+  if (appState.error) {
+    return (
+      <GestureHandlerRootView style={styles.container}>
+        <SafeAreaProvider>
+          <StatusBar style="auto" />
+          <View style={styles.errorContainer}>
+            <Text style={styles.title}>CyberSimply</Text>
+            <Text style={styles.subtitle}>App Error</Text>
+            <Text style={styles.description}>
+              {appState.error}
+            </Text>
+            <Text style={styles.retryText}>
+              The app will continue to work with limited functionality.
             </Text>
           </View>
         </SafeAreaProvider>
@@ -184,20 +182,82 @@ export default function App() {
     );
   }
 
+  // Show main app
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <ThemeProvider>
-          <SupabaseProvider>
-            <AppProvider>
-              <AdFreeProvider>
-                <StatusBar style="auto" />
-                <AppNavigator />
-              </AdFreeProvider>
-            </AppProvider>
-          </SupabaseProvider>
-        </ThemeProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <ErrorBoundary>
+      <GestureHandlerRootView style={styles.container}>
+        <SafeAreaProvider>
+          <ThemeProvider>
+            <SupabaseProvider>
+              <AppProvider>
+                <AdFreeProvider>
+                  <StatusBar style="auto" />
+                  <AppNavigator />
+                </AdFreeProvider>
+              </AppProvider>
+            </SupabaseProvider>
+          </ThemeProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </ErrorBoundary>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  loadingContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    color: '#FFFFFF',
+    marginTop: 20,
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  errorText: {
+    color: '#FF6B6B',
+    marginTop: 10,
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  container: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#000000',
+    marginBottom: 10,
+  },
+  subtitle: {
+    fontSize: 24,
+    color: '#FF6B35',
+    marginBottom: 20,
+  },
+  description: {
+    fontSize: 16,
+    color: '#666666',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 20,
+  },
+  retryText: {
+    fontSize: 14,
+    color: '#999999',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+});

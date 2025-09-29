@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -185,7 +185,21 @@ export default function AppNavigator() {
     console.log("🔐 AuthState:", authState);
 
     // Show loading screen while authentication state is being determined
-    if (authState.isLoading) {
+    // Add a timeout to prevent infinite loading
+    const [loadingTimeout, setLoadingTimeout] = useState(false);
+    
+    useEffect(() => {
+      if (authState.isLoading) {
+        const timeout = setTimeout(() => {
+          console.log("⏰ Auth loading timeout, forcing app to continue");
+          setLoadingTimeout(true);
+        }, 3000); // 3 second timeout for auth loading
+        
+        return () => clearTimeout(timeout);
+      }
+    }, [authState.isLoading]);
+    
+    if (authState.isLoading && !loadingTimeout) {
       console.log("⏳ Auth is loading, showing loading screen");
       return (
         <NavigationContainer

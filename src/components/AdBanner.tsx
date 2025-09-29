@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useAdFree } from '../context/AdFreeContext';
+import { useAdManager } from '../services/adManager';
 import { TYPOGRAPHY, SPACING } from '../constants';
 import { adService, AdBannerData } from '../services/adService';
 import { AD_CONFIG } from '../constants/adConfig';
@@ -31,12 +32,24 @@ export function AdBanner({
 }: AdBannerProps) {
   const { colors } = useTheme();
   const { isAdFree } = useAdFree();
+  const { shouldShowAds, logAdDecision } = useAdManager();
   const [isVisible, setIsVisible] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [adData, setAdData] = useState<AdBannerData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [useRealAdMob, setUseRealAdMob] = useState(false);
+
+  // Log ad decision for debugging
+  useEffect(() => {
+    logAdDecision('AdBanner', shouldShowAds);
+  }, [shouldShowAds, logAdDecision]);
+
+  // Don't render if user has ad-free access - COMPLETE HIDE
+  if (!shouldShowAds) {
+    console.log('🚫 [AdBanner] Completely hidden - user has ad-free access');
+    return null;
+  }
 
   // Retry function for failed ad loads
   const retryLoadAd = () => {

@@ -19,6 +19,8 @@ export interface NewsApiResponse {
 }
 
 import { supabaseArticleService } from './supabaseArticleService';
+import { supabaseArticleServiceProduction } from './supabaseArticleServiceProduction';
+import { testSupabaseConnection } from './supabaseClientProduction';
 
 export class NewsApiService {
   private static readonly API_KEY = process.env.EXPO_PUBLIC_NEWS_API_KEY || 'your_newsapi_key_here';
@@ -33,17 +35,25 @@ export class NewsApiService {
 
   static async fetchNewsByCategory(category: 'cybersecurity' | 'hacking' | 'general', page: number = 1): Promise<NewsApiArticle[]> {
     try {
-      console.log(`🔍 Fetching ${category} news from Supabase...`);
+      console.log(`🔍 [NewsAPI] Fetching ${category} news from Supabase (page ${page})...`);
       
-      // Query Supabase for articles by category
-      const supabaseResult = await supabaseArticleService.getArticles({
+      // Test Supabase connection first
+      const connectionTest = await testSupabaseConnection();
+      if (!connectionTest.success) {
+        console.warn(`⚠️ [NewsAPI] Supabase connection failed: ${connectionTest.error}`);
+        console.log(`🔄 [NewsAPI] Using fallback articles for ${category}`);
+        return this.getFallbackArticles(category);
+      }
+      
+      // Query Supabase for articles by category using production service
+      const supabaseResult = await supabaseArticleServiceProduction.getArticles({
         category: category,
         limit: 10,
         offset: (page - 1) * 10
       });
       
       if (supabaseResult.success && supabaseResult.data && supabaseResult.data.articles.length > 0) {
-        console.log(`✅ Found ${supabaseResult.data.articles.length} ${category} articles in Supabase`);
+        console.log(`✅ [NewsAPI] Found ${supabaseResult.data.articles.length} ${category} articles in Supabase`);
         // Convert Supabase articles to NewsAPI format for compatibility
         return supabaseResult.data.articles.map(article => ({
           source: { id: article.source || 'unknown', name: article.source || 'Unknown' },
@@ -57,28 +67,36 @@ export class NewsApiService {
         }));
       }
       
-      console.log(`⚠️ No ${category} articles found in Supabase, using fallback articles`);
+      console.log(`⚠️ [NewsAPI] No ${category} articles found in Supabase, using fallback articles`);
       return this.getFallbackArticles(category);
       
     } catch (error) {
-      console.error(`❌ Error fetching ${category} news from Supabase:`, error);
-      console.warn(`⚠️ Supabase unavailable for ${category} news, using fallback articles`);
+      console.error(`❌ [NewsAPI] Error fetching ${category} news from Supabase:`, error);
+      console.log(`🔄 [NewsAPI] Using fallback articles for ${category}`);
       return this.getFallbackArticles(category);
     }
   }
 
   static async fetchLatestNews(page: number = 1): Promise<NewsApiArticle[]> {
     try {
-      console.log('📰 Fetching latest news from Supabase...');
+      console.log(`📰 [NewsAPI] Fetching latest news from Supabase (page ${page})...`);
       
-      // Query Supabase directly for articles
-      const supabaseResult = await supabaseArticleService.getArticles({
+      // Test Supabase connection first
+      const connectionTest = await testSupabaseConnection();
+      if (!connectionTest.success) {
+        console.warn(`⚠️ [NewsAPI] Supabase connection failed: ${connectionTest.error}`);
+        console.log(`🔄 [NewsAPI] Using fallback articles`);
+        return this.getFallbackArticles('cybersecurity');
+      }
+      
+      // Query Supabase directly for articles using production service
+      const supabaseResult = await supabaseArticleServiceProduction.getArticles({
         limit: 20,
         offset: (page - 1) * 10
       });
       
       if (supabaseResult.success && supabaseResult.data && supabaseResult.data.articles.length > 0) {
-        console.log(`✅ Found ${supabaseResult.data.articles.length} articles in Supabase`);
+        console.log(`✅ [NewsAPI] Found ${supabaseResult.data.articles.length} articles in Supabase`);
         // Convert Supabase articles to NewsAPI format for compatibility
         return supabaseResult.data.articles.map(article => ({
           source: { id: article.source || 'unknown', name: article.source || 'Unknown' },
@@ -92,12 +110,12 @@ export class NewsApiService {
         }));
       }
       
-      console.log('⚠️ No articles found in Supabase, using fallback articles');
+      console.log('⚠️ [NewsAPI] No articles found in Supabase, using fallback articles');
       return this.getFallbackArticles('cybersecurity');
       
     } catch (error) {
-      console.error('❌ Error fetching latest news from Supabase:', error);
-      console.warn('Supabase unavailable, using fallback articles');
+      console.error('❌ [NewsAPI] Error fetching latest news from Supabase:', error);
+      console.log('🔄 [NewsAPI] Using fallback articles');
       return this.getFallbackArticles('cybersecurity');
     }
   }

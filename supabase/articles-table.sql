@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS articles (
   summary TEXT,
   content TEXT,
   source_url TEXT,
+  redirect_url TEXT,
   source TEXT,
   author TEXT,
   published_at TIMESTAMPTZ,
@@ -25,6 +26,7 @@ CREATE TABLE IF NOT EXISTS articles (
 CREATE INDEX IF NOT EXISTS idx_articles_published_at ON articles(published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_articles_category ON articles(category);
 CREATE INDEX IF NOT EXISTS idx_articles_source ON articles(source);
+CREATE INDEX IF NOT EXISTS idx_articles_redirect_url ON articles(redirect_url);
 CREATE INDEX IF NOT EXISTS idx_articles_created_at ON articles(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_articles_ai_summary_generated ON articles(ai_summary_generated);
 
@@ -91,7 +93,7 @@ CREATE POLICY "Authenticated users can update article metrics" ON article_metric
   FOR UPDATE USING (auth.role() = 'authenticated');
 
 -- Insert some sample articles for testing
-INSERT INTO articles (id, title, summary, source, author, published_at, image_url, category, what, impact, takeaways, why_this_matters, ai_summary_generated) VALUES
+INSERT INTO articles (id, title, summary, source, author, published_at, image_url, category, what, impact, takeaways, why_this_matters, ai_summary_generated, redirect_url) VALUES
 (
   'sample-article-1',
   'Cybersecurity Best Practices for 2024',
@@ -105,7 +107,8 @@ INSERT INTO articles (id, title, summary, source, author, published_at, image_ur
   'Implementing these practices can significantly reduce the risk of cyber attacks and data breaches.',
   'Key takeaways include using strong passwords, enabling 2FA, keeping software updated, and being cautious with email attachments.',
   'With cyber threats constantly evolving, staying informed about security best practices is crucial for protecting personal and business data.',
-  true
+  true,
+  'https://example.com/cybersecurity-best-practices-2024'
 ),
 (
   'sample-article-2',
@@ -120,7 +123,8 @@ INSERT INTO articles (id, title, summary, source, author, published_at, image_ur
   'Proper data protection helps prevent identity theft and maintains privacy in an increasingly connected world.',
   'Important steps include reviewing privacy settings, using VPNs, limiting data sharing, and being selective about app permissions.',
   'Personal data is valuable to cybercriminals and companies alike, making protection essential for privacy and security.',
-  true
+  true,
+  'https://example.com/protect-personal-data-online'
 ),
 (
   'sample-article-3',
@@ -135,7 +139,8 @@ INSERT INTO articles (id, title, summary, source, author, published_at, image_ur
   'Phishing attacks are a leading cause of data breaches and can result in financial loss and identity theft.',
   'Red flags include urgent requests, suspicious links, poor grammar, and requests for sensitive information.',
   'Phishing attacks are becoming more sophisticated, making awareness and education crucial for protection.',
-  true
+  true,
+  'https://example.com/understanding-phishing-attacks'
 )
 ON CONFLICT (id) DO NOTHING;
 

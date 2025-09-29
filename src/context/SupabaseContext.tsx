@@ -14,6 +14,7 @@ interface SupabaseContextType {
   enterGuestMode: () => Promise<{ success: boolean; error?: string }>;
   convertGuestToUser: (email: string, password: string, displayName?: string) => Promise<{ success: boolean; error?: string }>;
   updateProfile: (updates: { display_name?: string; avatar_url?: string }) => Promise<{ success: boolean; error?: string }>;
+  refreshUserProfile: () => Promise<{ success: boolean; error?: string }>;
   
   // User Settings
   userSettings: UserSettings | null;
@@ -99,7 +100,7 @@ export function SupabaseProvider({ children }: SupabaseProviderProps) {
       if (authState.isLoading) {
         setAuthState(prev => ({ ...prev, isLoading: false }));
       }
-    }, 15000); // 15 second timeout
+    }, 5000); // 5 second timeout
 
     return () => {
       clearTimeout(timeout);
@@ -140,6 +141,11 @@ export function SupabaseProvider({ children }: SupabaseProviderProps) {
 
   const updateProfile = async (updates: { display_name?: string; avatar_url?: string }) => {
     const result = await authService.updateProfile(updates);
+    return result;
+  };
+
+  const refreshUserProfile = async () => {
+    const result = await authService.refreshUserProfile();
     return result;
   };
 
@@ -246,6 +252,7 @@ export function SupabaseProvider({ children }: SupabaseProviderProps) {
     enterGuestMode,
     convertGuestToUser,
     updateProfile,
+    refreshUserProfile,
     
     // User Settings
     userSettings,
