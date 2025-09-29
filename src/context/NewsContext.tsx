@@ -1,10 +1,60 @@
 import React, { createContext, useContext, useReducer, ReactNode, useCallback, useEffect } from 'react';
-import { NewsService } from '../services/api';
+import { Platform } from 'react-native';
 import { ProcessedArticle } from '../services/newsService';
+import { directSupabaseService, DirectArticle } from '../services/directSupabaseService';
 import { AISummarizationService } from '../services/aiSummarizationService';
 import { ArticleStorageService } from '../services/articleStorageService';
 import { SupabaseArticleService } from '../services/supabaseArticleService';
 import { getRecentArticles as getRecentArticlesFromUtils, getArticlesToArchive, sortArticlesByDate } from '../utils/dateUtils';
+import { testflightDiagnostics } from '../services/testflightDiagnostics';
+
+// Helper function to validate if an article has all required fields
+const isArticleComplete = (directArticle: DirectArticle): boolean => {
+  return !!(
+    directArticle.id &&
+    directArticle.title &&
+    directArticle.summary &&
+    directArticle.source &&
+    directArticle.published_at &&
+    directArticle.image_url &&
+    directArticle.what &&
+    directArticle.impact &&
+    directArticle.takeaways &&
+    directArticle.why_this_matters &&
+    directArticle.category
+  );
+};
+
+// Helper function to convert DirectArticle to ProcessedArticle
+const convertToProcessedArticle = (directArticle: DirectArticle): ProcessedArticle => ({
+  id: directArticle.id,
+  title: directArticle.title,
+  summary: directArticle.summary,
+  sourceUrl: directArticle.redirect_url || '',
+  source: directArticle.source,
+  author: directArticle.author,
+  authorDisplay: directArticle.author || directArticle.source,
+  publishedAt: directArticle.published_at,
+  imageUrl: directArticle.image_url || undefined,
+  category: (directArticle.category as 'cybersecurity' | 'hacking' | 'general') || 'general',
+  what: directArticle.what || '',
+  impact: directArticle.impact || '',
+  takeaways: directArticle.takeaways || '',
+  whyThisMatters: directArticle.why_this_matters || ''
+});
+
+// Helper function to deduplicate articles by unique ID
+const deduplicateArticles = (articles: ProcessedArticle[]): ProcessedArticle[] => {
+  const seen = new Set<string>();
+  return articles.filter(article => {
+    if (seen.has(article.id)) {
+      console.log(`🔄 NewsContext: Removing duplicate article: ${article.id}`);
+      return false;
+    }
+    seen.add(article.id);
+    return true;
+  });
+};
 
 interface NewsState {
   articles: ProcessedArticle[];
@@ -21,6 +71,16 @@ interface NewsState {
   totalStoredArticles: number;
   storageSize: string;
   isInitialized: boolean;
+  totalArticles: number;
+  currentOffset: number;
+  categoryCounts: {
+    cybersecurity: number;
+    hacking: number;
+    general: number;
+    archived: number;
+    total: number;
+  };
+  currentCategory: string;
 }
 
 type NewsAction =
@@ -39,7 +99,11 @@ type NewsAction =
   | { type: 'TOGGLE_FAVORITE'; payload: string }
   | { type: 'SET_FAVORITES'; payload: string[] }
   | { type: 'SET_STORAGE_STATS'; payload: { totalArticles: number; storageSize: string } }
-  | { type: 'SET_INITIALIZED'; payload: boolean };
+  | { type: 'SET_INITIALIZED'; payload: boolean }
+  | { type: 'SET_TOTAL_ARTICLES'; payload: number }
+  | { type: 'SET_CURRENT_OFFSET'; payload: number }
+  | { type: 'SET_CATEGORY_COUNTS'; payload: { cybersecurity: number; hacking: number; general: number; archived: number; total: number; } }
+  | { type: 'SET_CURRENT_CATEGORY'; payload: string };
 
 const initialState: NewsState = {
   articles: [],
@@ -56,6 +120,16 @@ const initialState: NewsState = {
   totalStoredArticles: 0,
   storageSize: '0 KB',
   isInitialized: false,
+  totalArticles: 0,
+  currentOffset: 0,
+  categoryCounts: {
+    cybersecurity: 0,
+    hacking: 0,
+    general: 0,
+    archived: 0,
+    total: 0
+  },
+  currentCategory: 'all',
 };
 
 function newsReducer(state: NewsState, action: NewsAction): NewsState {
@@ -106,6 +180,14 @@ function newsReducer(state: NewsState, action: NewsAction): NewsState {
       };
     case 'SET_INITIALIZED':
       return { ...state, isInitialized: action.payload };
+    case 'SET_TOTAL_ARTICLES':
+      return { ...state, totalArticles: action.payload };
+    case 'SET_CURRENT_OFFSET':
+      return { ...state, currentOffset: action.payload };
+    case 'SET_CATEGORY_COUNTS':
+      return { ...state, categoryCounts: action.payload };
+    case 'SET_CURRENT_CATEGORY':
+      return { ...state, currentCategory: action.payload };
     default:
       return state;
   }
@@ -113,7 +195,7 @@ function newsReducer(state: NewsState, action: NewsAction): NewsState {
 
 interface NewsContextType {
   state: NewsState;
-  fetchNews: () => Promise<void>;
+  fetchNews: (category?: string) => Promise<void>;
   refreshNews: () => Promise<void>;
   clearCacheAndRefresh: () => Promise<void>;
   loadMoreNews: () => Promise<void>;
@@ -125,6 +207,8 @@ interface NewsContextType {
   cleanupDuplicates: () => Promise<number>;
   toggleFavorite: (articleId: string) => void;
   favorites: string[];
+  getCategoryCounts: () => Promise<void>;
+  switchToCategory: (category: string) => Promise<void>;
 }
 
 const NewsContext = createContext<NewsContextType | null>(null);
@@ -182,120 +266,99 @@ const archiveOldArticles = async (): Promise<void> => {
 export function NewsProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(newsReducer, initialState);
 
-  const fetchNews = useCallback(async () => {
-    console.log('NewsContext: Starting fetchNews...');
+  const fetchNews = useCallback(async (category: string = 'all') => {
+    console.log(`NewsContext: Starting fetchNews for category: ${category}`);
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
+    dispatch({ type: 'SET_CURRENT_CATEGORY', payload: category });
 
     try {
-      // Always fetch fresh articles from NewsService first
-      console.log('NewsContext: Fetching fresh articles from NewsService...');
-      const newArticles = await NewsService.fetchNewsFromAPI(1);
-      console.log(`NewsContext: Fetched ${newArticles.length} fresh articles from NewsService`);
+      // Fetch first page of articles with pagination
+      console.log('NewsContext: Loading first page of articles from Supabase...');
       
-      if (newArticles.length > 0) {
-        // Save new articles to storage (this will merge with existing ones)
-        console.log('NewsContext: Saving new articles to storage...');
-        await saveArticlesToBoth(newArticles);
-        
-        console.log(`NewsContext: Added ${newArticles.length} new articles to storage`);
+      const result = await Promise.race([
+        directSupabaseService.getArticlesPaginated(50, 0, category),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Supabase query timeout after 10 seconds')), 10000)
+        )
+      ]) as any;
+      
+      // Log TestFlight diagnostics
+      testflightDiagnostics.logSupabaseQuery('fetchNews', result);
+      testflightDiagnostics.logPaginationIssues(0, 50, result.totalCount || 0, result.data?.length || 0);
+      
+      if (!result.success || !result.data) {
+        throw new Error(result.error || 'Failed to fetch articles from Supabase');
+      }
+
+      // Filter out incomplete articles and convert DirectArticle to ProcessedArticle
+      const completeArticles = result.data.filter(isArticleComplete);
+      console.log(`NewsContext: Found ${completeArticles.length} complete articles out of ${result.data.length} total articles`);
+      
+      if (completeArticles.length === 0) {
+        console.warn('NewsContext: No complete articles found - all articles missing required fields');
+        throw new Error('No complete articles available. All articles are missing required fields like thumbnails or summaries.');
       }
       
-      // Get all articles from storage and update state
-      console.log('NewsContext: Getting all articles from storage...');
-      let allArticles = await ArticleStorageService.getArticles();
-      console.log(`NewsContext: Total articles in storage: ${allArticles.length}`);
+      const processedArticles = completeArticles.map(convertToProcessedArticle);
+      console.log(`NewsContext: Successfully processed ${processedArticles.length} complete articles from Supabase`);
       
-      // Migrate articles to ensure they have authorDisplay field
-      allArticles = allArticles.map(article => ({
-        ...article,
-        authorDisplay: article.authorDisplay || article.author || article.source || 'Unknown'
-      }));
+      // Log article data for TestFlight
+      testflightDiagnostics.logArticleData(processedArticles, 'fetchNews');
+      testflightDiagnostics.logCategoryMapping(processedArticles);
+      testflightDiagnostics.logRedirectUrlIssues(processedArticles);
       
-      // If any articles were migrated, save them back
-      const migratedArticles = allArticles.filter(article => !article.authorDisplay || article.authorDisplay === 'Unknown');
-      if (migratedArticles.length > 0) {
-        console.log(`NewsContext: Migrating ${migratedArticles.length} articles to add authorDisplay field`);
-        await ArticleStorageService.saveArticles(allArticles);
+      if (processedArticles.length > 0) {
+        console.log('NewsContext: Sample article from Supabase:', {
+          id: processedArticles[0].id,
+          title: processedArticles[0].title,
+          publishedAt: processedArticles[0].publishedAt,
+          category: processedArticles[0].category,
+          sourceUrl: processedArticles[0].sourceUrl
+        });
       }
-      
-      // If we have fewer than 50 articles, try to fetch more from different categories
-      if (allArticles.length < 50) {
-        console.log('NewsContext: Not enough articles, fetching from additional categories...');
-        
-        // Fetch from different categories
-        const additionalCategories = ['hacking', 'general'];
-        for (const category of additionalCategories) {
-          try {
-            const categoryArticles = await NewsService.fetchNewsFromAPI(1);
-            if (categoryArticles.length > 0) {
-              await saveArticlesToBoth(categoryArticles);
-              console.log(`NewsContext: Added ${categoryArticles.length} articles from ${category} category`);
-            }
-          } catch (error) {
-            console.warn(`NewsContext: Failed to fetch articles for ${category}:`, error);
-          }
-        }
-        
-        // Get updated articles count
-        const updatedArticles = await ArticleStorageService.getArticles();
-        console.log(`NewsContext: Updated total articles: ${updatedArticles.length}`);
-        dispatch({ type: 'SET_ARTICLES', payload: updatedArticles });
-      } else {
-        dispatch({ type: 'SET_ARTICLES', payload: allArticles });
-      }
-      
+
+      // Deduplicate articles to prevent duplicates
+      const deduplicatedArticles = deduplicateArticles(processedArticles);
+      console.log(`NewsContext: After deduplication: ${deduplicatedArticles.length} articles (${processedArticles.length - deduplicatedArticles.length} duplicates removed)`);
+
+      // Update state with articles and pagination info
+      dispatch({ type: 'SET_ARTICLES', payload: deduplicatedArticles });
       dispatch({ type: 'SET_LAST_UPDATED', payload: new Date() });
-      dispatch({ type: 'SET_CURRENT_PAGE', payload: 1 }); // Reset page
-      dispatch({ type: 'SET_HAS_MORE', payload: true }); // Reset hasMore
+      dispatch({ type: 'SET_CURRENT_PAGE', payload: 1 });
+      dispatch({ type: 'SET_CURRENT_OFFSET', payload: 0 });
+      dispatch({ type: 'SET_TOTAL_ARTICLES', payload: result.totalCount || 0 });
+      dispatch({ type: 'SET_HAS_MORE', payload: result.hasMore || false });
+      
+      // Save to local storage for offline access
+      console.log('NewsContext: Saving articles to local storage...');
+      await ArticleStorageService.saveArticles(processedArticles);
       
       // Update storage stats
       const stats = await ArticleStorageService.getStorageStats();
       dispatch({ type: 'SET_STORAGE_STATS', payload: stats });
       
-      // Archive old articles after saving new ones
-      await archiveOldArticles();
-      
-      console.log(`NewsContext: Total articles in storage: ${allArticles.length}`);
-      console.log('NewsContext: Sample article:', allArticles[0]);
-
-      // Start AI summarization in the background for new articles
-      dispatch({ type: 'SET_SUMMARIZING', payload: true });
-      
-      try {
-        // Summarize new articles with AI
-        const summarizedArticles = await AISummarizationService.summarizeArticles(newArticles);
-        
-        // Save summarized articles to storage
-        await saveArticlesToBoth(summarizedArticles);
-        
-        // Get updated articles from storage
-        const updatedArticles = await ArticleStorageService.getArticles();
-        dispatch({ type: 'SET_ARTICLES', payload: updatedArticles });
-        dispatch({ type: 'SET_AI_QUOTA_EXCEEDED', payload: false });
-        
-        // Update storage stats
-        const stats = await ArticleStorageService.getStorageStats();
-        dispatch({ type: 'SET_STORAGE_STATS', payload: stats });
-      } catch (aiError) {
-        console.warn('AI summarization failed, using fallback summaries:', aiError);
-        
-        // Check if it's a quota error
-        if (aiError instanceof Error && aiError.message.includes('429')) {
-          dispatch({ type: 'SET_AI_QUOTA_EXCEEDED', payload: true });
-        }
-        
-        // Articles are still available with basic summaries
-      } finally {
-        dispatch({ type: 'SET_SUMMARIZING', payload: false });
-      }
+      console.log(`NewsContext: Successfully loaded ${processedArticles.length} of ${result.totalCount || 0} articles for category: ${category}`);
 
     } catch (error) {
       console.error('NewsContext: Error in fetchNews:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch news';
-      dispatch({ type: 'SET_ERROR', payload: errorMessage });
+      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : 'Failed to fetch news from Supabase' });
+      
+      // Fallback: try to load from local storage
+      console.log('NewsContext: Attempting fallback to local storage...');
+      try {
+        const localArticles = await ArticleStorageService.getArticles();
+        if (localArticles.length > 0) {
+          console.log(`NewsContext: Loaded ${localArticles.length} articles from local storage as fallback`);
+          dispatch({ type: 'SET_ARTICLES', payload: localArticles });
+          dispatch({ type: 'SET_ERROR', payload: null }); // Clear error since we have fallback data
+        }
+      } catch (fallbackError) {
+        console.error('NewsContext: Fallback to local storage also failed:', fallbackError);
+      }
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
+      dispatch({ type: 'SET_INITIALIZED', payload: true });
       console.log('NewsContext: fetchNews completed');
     }
   }, []);
@@ -316,10 +379,17 @@ export function NewsProvider({ children }: { children: ReactNode }) {
       
       for (const category of categories) {
         try {
-          const categoryArticles = await NewsService.fetchNewsFromAPI(1);
-          if (categoryArticles.length > 0) {
-            allNewArticles = [...allNewArticles, ...categoryArticles];
-            console.log(`NewsContext: Fetched ${categoryArticles.length} articles for ${category}`);
+          const result = await directSupabaseService.getArticlesByCategory(category, 20);
+          if (result.success && result.data) {
+            // Filter out incomplete articles
+            const completeArticles = result.data.filter(isArticleComplete);
+            console.log(`NewsContext: Found ${completeArticles.length} complete articles out of ${result.data.length} total for ${category}`);
+            
+            if (completeArticles.length > 0) {
+              const categoryArticles = completeArticles.map(convertToProcessedArticle);
+              allNewArticles = [...allNewArticles, ...categoryArticles];
+              console.log(`NewsContext: Fetched ${categoryArticles.length} complete articles for ${category}`);
+            }
           }
         } catch (error) {
           console.warn(`NewsContext: Failed to fetch articles for ${category}:`, error);
@@ -368,46 +438,57 @@ export function NewsProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_REFRESHING', payload: true });
     
     try {
-      // Fetch new articles from API
-      const newArticles = await NewsService.fetchNewsFromAPI(1); // Reset to page 1
+      // Force refresh by clearing any potential caching and adding timestamp
+      const refreshTimestamp = Date.now();
+      console.log(`NewsContext: Force refreshing articles from Supabase with timestamp: ${refreshTimestamp}`);
       
-      if (newArticles.length > 0) {
-        // Save new articles to storage (this will merge with existing ones)
-        await saveArticlesToBoth(newArticles);
-        
-        // Get all articles from storage and filter to show only recent ones
-        const allArticles = await ArticleStorageService.getArticles();
-        const recentArticles = getRecentArticlesFromUtils(allArticles, 14); // Show articles from last 2 weeks
-
-        // Update state with recent articles only
-        dispatch({ type: 'SET_ARTICLES', payload: recentArticles });
-        dispatch({ type: 'SET_LAST_UPDATED', payload: new Date() });
-        dispatch({ type: 'SET_CURRENT_PAGE', payload: 1 }); // Reset page
-        dispatch({ type: 'SET_HAS_MORE', payload: true }); // Reset hasMore
-        
-        // Update storage stats
-        const stats = await ArticleStorageService.getStorageStats();
-        dispatch({ type: 'SET_STORAGE_STATS', payload: stats });
+      // Query Supabase directly for fresh articles with current category
+      const result = await directSupabaseService.getArticlesPaginated(50, 0, state.currentCategory);
+      
+      if (!result.success || !result.data) {
+        throw new Error(result.error || 'Failed to refresh articles from Supabase');
       }
 
-      // Summarize with AI
-      dispatch({ type: 'SET_SUMMARIZING', payload: true });
-      const summarizedArticles = await AISummarizationService.summarizeArticles(newArticles);
+      // Filter out incomplete articles and convert DirectArticle to ProcessedArticle
+      const completeArticles = result.data.filter(isArticleComplete);
+      console.log(`NewsContext: Found ${completeArticles.length} complete articles out of ${result.data.length} total for refresh`);
       
-      // Save summarized articles to storage
-      await ArticleStorageService.saveArticles(summarizedArticles);
+      if (completeArticles.length === 0) {
+        console.warn('NewsContext: No complete articles found in refresh - all articles missing required fields');
+        dispatch({ type: 'SET_REFRESHING', payload: false });
+        return;
+      }
       
-      // Get updated articles from storage
-      const updatedArticles = await ArticleStorageService.getArticles();
-      dispatch({ type: 'SET_ARTICLES', payload: updatedArticles });
-      dispatch({ type: 'SET_SUMMARIZING', payload: false });
+      const processedArticles = completeArticles.map(convertToProcessedArticle);
+      console.log(`NewsContext: Refreshed ${processedArticles.length} complete articles from Supabase for category: ${state.currentCategory}`);
+      
+      // Log detailed article data for debugging
+      if (processedArticles.length > 0) {
+        console.log('NewsContext: Sample refreshed article:', {
+          id: processedArticles[0].id,
+          title: processedArticles[0].title,
+          publishedAt: processedArticles[0].publishedAt,
+          category: processedArticles[0].category,
+          ageInDays: Math.floor((new Date().getTime() - new Date(processedArticles[0].publishedAt).getTime()) / (1000 * 60 * 60 * 24))
+        });
+      }
+      
+      // Update state with fresh articles from Supabase
+      dispatch({ type: 'SET_ARTICLES', payload: processedArticles });
+      dispatch({ type: 'SET_LAST_UPDATED', payload: new Date() });
+      dispatch({ type: 'SET_CURRENT_PAGE', payload: 1 });
+      dispatch({ type: 'SET_HAS_MORE', payload: processedArticles.length >= 50 });
+      
+      // Save to local storage for offline access
+      await ArticleStorageService.saveArticles(processedArticles);
       
       // Update storage stats
       const stats = await ArticleStorageService.getStorageStats();
       dispatch({ type: 'SET_STORAGE_STATS', payload: stats });
 
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to refresh news';
+      console.error('NewsContext: Error refreshing news:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to refresh news from Supabase';
       dispatch({ type: 'SET_ERROR', payload: errorMessage });
     } finally {
       dispatch({ type: 'SET_REFRESHING', payload: false });
@@ -420,39 +501,73 @@ export function NewsProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_LOADING_MORE', payload: true });
     
     try {
-      const nextPage = state.currentPage + 1;
-      const moreArticles = await NewsService.loadMoreNews(nextPage);
+      const nextOffset = state.currentOffset + 50; // Load next 50 articles
       
-      if (moreArticles.length > 0) {
-        // Save new articles to storage
-        await saveArticlesToBoth(moreArticles);
+      console.log(`NewsContext: Loading more articles for category ${state.currentCategory} (offset: ${nextOffset})...`);
+      
+      // Query Supabase for more articles with proper pagination
+      const result = await directSupabaseService.getArticlesPaginated(50, nextOffset, state.currentCategory);
+      
+      // Log TestFlight diagnostics
+      testflightDiagnostics.logSupabaseQuery('loadMoreNews', result);
+      testflightDiagnostics.logPaginationIssues(nextOffset, 50, result.totalCount || 0, result.data?.length || 0);
+      
+      if (result.success && result.data) {
+        // Filter out incomplete articles
+        const completeArticles = result.data.filter(isArticleComplete);
+        console.log(`NewsContext: Found ${completeArticles.length} complete articles out of ${result.data.length} total articles for loadMore`);
         
-        // Get all articles from storage
-        const allArticles = await ArticleStorageService.getArticles();
+        if (completeArticles.length === 0) {
+          console.warn('NewsContext: No complete articles found in loadMore - all articles missing required fields');
+          dispatch({ type: 'SET_LOADING_MORE', payload: false });
+          return;
+        }
         
-        // Update state with all articles
-        dispatch({ type: 'SET_ARTICLES', payload: allArticles });
-        dispatch({ type: 'SET_CURRENT_PAGE', payload: nextPage });
+        const moreArticles = completeArticles.map(convertToProcessedArticle);
         
-        // Update storage stats
-        const stats = await ArticleStorageService.getStorageStats();
-        dispatch({ type: 'SET_STORAGE_STATS', payload: stats });
+        // Log article data for TestFlight
+        testflightDiagnostics.logArticleData(moreArticles, 'loadMoreNews');
+        testflightDiagnostics.logCategoryMapping(moreArticles);
+        testflightDiagnostics.logRedirectUrlIssues(moreArticles);
         
-        // If we got fewer articles than expected, we might be at the end
-        if (moreArticles.length < 10) {
+        if (moreArticles.length > 0) {
+          // Add new articles to existing articles
+          const allArticles = [...state.articles, ...moreArticles];
+          
+          // Deduplicate articles to prevent duplicates
+          const deduplicatedArticles = deduplicateArticles(allArticles);
+          
+          // Update state with deduplicated articles
+          dispatch({ type: 'SET_ARTICLES', payload: deduplicatedArticles });
+          dispatch({ type: 'SET_CURRENT_OFFSET', payload: nextOffset });
+          dispatch({ type: 'SET_HAS_MORE', payload: result.hasMore || false });
+          
+          console.log(`NewsContext: Loaded ${moreArticles.length} more articles. Total: ${deduplicatedArticles.length} of ${result.totalCount || 0} (${allArticles.length - deduplicatedArticles.length} duplicates removed)`);
+          
+          // Save to local storage for offline access
+          await ArticleStorageService.saveArticles(deduplicatedArticles);
+          
+          // Update storage stats
+          const stats = await ArticleStorageService.getStorageStats();
+          dispatch({ type: 'SET_STORAGE_STATS', payload: stats });
+        } else {
+          // No more articles available
+          console.log('NewsContext: No more articles available');
           dispatch({ type: 'SET_HAS_MORE', payload: false });
         }
       } else {
-        // No more articles available
+        console.error('NewsContext: Failed to load more articles:', result.error);
         dispatch({ type: 'SET_HAS_MORE', payload: false });
+        dispatch({ type: 'SET_ERROR', payload: result.error || 'Failed to load more articles' });
       }
     } catch (error) {
+      console.error('NewsContext: Error loading more news:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to load more news';
       dispatch({ type: 'SET_ERROR', payload: errorMessage });
     } finally {
       dispatch({ type: 'SET_LOADING_MORE', payload: false });
     }
-  }, [state.loadingMore, state.hasMore, state.currentPage]);
+  }, [state.loadingMore, state.hasMore, state.currentOffset, state.articles, state.currentCategory]);
 
   const getNewsByCategory = useCallback((category: 'cybersecurity' | 'hacking' | 'general'): ProcessedArticle[] => {
     if (category === 'general') {
@@ -520,41 +635,82 @@ export function NewsProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'TOGGLE_FAVORITE', payload: articleId });
   }, []);
 
-  // Initialize storage and load existing articles
+  // Initialize storage and load articles from Supabase
   const initializeStorage = useCallback(async () => {
     try {
-      console.log('NewsContext: Initializing storage...');
+      console.log('NewsContext: Initializing and fetching fresh articles from Supabase...');
       
-      // First, clean up any existing duplicates
-      const duplicatesRemoved = await ArticleStorageService.removeDuplicates();
-      if (duplicatesRemoved > 0) {
-        console.log(`NewsContext: Cleaned up ${duplicatesRemoved} duplicate articles`);
+      // Always fetch fresh articles from Supabase first
+      await fetchNews();
+      
+      // Clean up any existing duplicates in background
+      try {
+        const duplicatesRemoved = await ArticleStorageService.removeDuplicates();
+        if (duplicatesRemoved > 0) {
+          console.log(`NewsContext: Cleaned up ${duplicatesRemoved} duplicate articles`);
+        }
+      } catch (cleanupError) {
+        console.warn('NewsContext: Cleanup failed (non-critical):', cleanupError);
       }
       
-      // Load existing articles from storage
-      const existingArticles = await ArticleStorageService.getArticles();
-      console.log(`NewsContext: Found ${existingArticles.length} existing articles in storage`);
-      
-      if (existingArticles.length > 0) {
-        dispatch({ type: 'SET_ARTICLES', payload: existingArticles });
-        dispatch({ type: 'SET_LAST_UPDATED', payload: new Date() });
-        
-        // Update storage stats
-        const stats = await ArticleStorageService.getStorageStats();
-        dispatch({ type: 'SET_STORAGE_STATS', payload: stats });
-        
-        console.log(`NewsContext: Initialized with ${existingArticles.length} existing articles from storage`);
-      } else {
-        console.log('NewsContext: No existing articles found in storage');
-      }
-      
-      dispatch({ type: 'SET_INITIALIZED', payload: true });
       console.log('NewsContext: Initialization complete');
     } catch (error) {
-      console.error('NewsContext: Failed to initialize storage:', error);
-      dispatch({ type: 'SET_INITIALIZED', payload: true });
+      console.error('NewsContext: Failed to initialize:', error);
+      // Try to load from local storage as fallback
+      try {
+        console.log('NewsContext: Attempting fallback to local storage...');
+        const existingArticles = await ArticleStorageService.getArticles();
+        if (existingArticles.length > 0) {
+          dispatch({ type: 'SET_ARTICLES', payload: existingArticles });
+          dispatch({ type: 'SET_LAST_UPDATED', payload: new Date() });
+          console.log(`NewsContext: Loaded ${existingArticles.length} articles from local storage as fallback`);
+        }
+      } catch (fallbackError) {
+        console.error('NewsContext: Fallback to local storage failed:', fallbackError);
+        dispatch({ type: 'SET_ERROR', payload: 'Failed to load articles' });
+      } finally {
+        dispatch({ type: 'SET_INITIALIZED', payload: true });
+      }
+    }
+  }, [fetchNews]);
+
+  // Get category counts from Supabase
+  const getCategoryCounts = useCallback(async () => {
+    try {
+      // Force refresh category counts with timestamp for debugging
+      const refreshTimestamp = Date.now();
+      console.log(`NewsContext: Force fetching category counts from Supabase with timestamp: ${refreshTimestamp}`);
+      
+      const result = await directSupabaseService.getCategoryCounts();
+      
+      if (result.success && result.counts) {
+        dispatch({ type: 'SET_CATEGORY_COUNTS', payload: result.counts });
+        console.log('NewsContext: Updated category counts:', result.counts);
+        
+        // Log detailed counts for debugging
+        console.log('NewsContext: Detailed category counts:', {
+          cybersecurity: result.counts.cybersecurity,
+          hacking: result.counts.hacking,
+          general: result.counts.general,
+          archived: result.counts.archived,
+          total: result.counts.total,
+          platform: Platform.OS,
+          isProduction: !__DEV__,
+          timestamp: refreshTimestamp
+        });
+      } else {
+        console.error('NewsContext: Failed to fetch category counts:', result.error);
+      }
+    } catch (error) {
+      console.error('NewsContext: Error fetching category counts:', error);
     }
   }, []);
+
+  // Switch to a different category
+  const switchToCategory = useCallback(async (category: string) => {
+    console.log(`NewsContext: Switching to category: ${category}`);
+    await fetchNews(category);
+  }, [fetchNews]);
 
   // Initialize storage when component mounts
   useEffect(() => {
@@ -584,6 +740,8 @@ export function NewsProvider({ children }: { children: ReactNode }) {
       cleanupDuplicates,
       toggleFavorite,
       favorites: state.favorites,
+      getCategoryCounts,
+      switchToCategory,
     }}>
       {children}
     </NewsContext.Provider>

@@ -16,9 +16,10 @@ import { useNews } from '../context/NewsContext';
 import { useSupabase } from '../context/SupabaseContext';
 import { ArticleCategory } from '../types';
 import { AdBanner } from '../components/AdBanner';
+import { PinnedBannerAd } from '../components/PinnedBannerAd';
 
 // Use the unified category type
-type NewsCategory = ArticleCategory | 'all';
+type NewsCategory = 'cybersecurity' | 'hacking' | 'general' | 'all';
 
 interface Category {
   id: NewsCategory;
@@ -41,81 +42,55 @@ type NavigationProp = {
 };
 
 export function CategoriesScreen() {
-  const navigation = useNavigation<NavigationProp>();
+  const navigation = useNavigation();
   const { colors } = useTheme();
-  const { state } = useNews();
+  const { state, getCategoryCounts } = useNews();
   const { authState } = useSupabase();
   const [categories, setCategories] = useState<Category[]>([]);
 
-  // Initialize categories with actual article counts
+  // Initialize categories with actual article counts from Supabase
   useEffect(() => {
-    const calculateArticleCounts = () => {
-      // Get article counts by category
-      const securityCount = state.articles.filter(article => 
-        article.category === 'cybersecurity' && 
-        (article.title.toLowerCase().includes('security') || 
-         article.summary.toLowerCase().includes('security') ||
-         article.title.toLowerCase().includes('protection') ||
-         article.summary.toLowerCase().includes('protection'))
-      ).length;
-
-      const breachesCount = state.articles.filter(article => 
-        article.title.toLowerCase().includes('breach') || 
-        article.summary.toLowerCase().includes('breach') ||
-        article.title.toLowerCase().includes('attack') ||
-        article.summary.toLowerCase().includes('attack') ||
-        article.title.toLowerCase().includes('hack') ||
-        article.summary.toLowerCase().includes('hack')
-      ).length;
-
-      const scamsCount = state.articles.filter(article => 
-        article.title.toLowerCase().includes('scam') || 
-        article.summary.toLowerCase().includes('scam') ||
-        article.title.toLowerCase().includes('phish') ||
-        article.summary.toLowerCase().includes('phish') ||
-        article.title.toLowerCase().includes('fraud') ||
-        article.summary.toLowerCase().includes('fraud')
-      ).length;
-
-      // Count articles by actual category
-      const cybersecurityCount = state.articles.filter(article => article.category === 'cybersecurity').length;
-      const hackingCount = state.articles.filter(article => article.category === 'hacking').length;
-      const generalCount = state.articles.filter(article => article.category === 'general').length;
-
+    const updateCategoriesWithCounts = () => {
       const updatedCategories: Category[] = [
         {
-          id: 'Security Basics',
-          name: 'Security',
-          description: 'Security best practices and protection tips',
+          id: 'cybersecurity',
+          name: 'Cybersecurity',
+          description: 'Security best practices, vulnerabilities, and protection tips',
           icon: 'shield-checkmark',
           color: '#4CAF50',
-          articleCount: cybersecurityCount
+          articleCount: state.categoryCounts.cybersecurity
         },
         {
-          id: 'Major Breaches',
-          name: 'Breaches',
-          description: 'Major security breaches and cyber attacks',
+          id: 'hacking',
+          name: 'Hacking & Exploits',
+          description: 'Hacking techniques, exploits, and cyber attacks',
           icon: 'warning',
           color: '#FF5722',
-          articleCount: hackingCount
+          articleCount: state.categoryCounts.hacking
         },
         {
-          id: 'Privacy Tips',
-          name: 'General',
-          description: 'General cybersecurity news and updates',
+          id: 'general',
+          name: 'General Tech',
+          description: 'General technology and cybersecurity news',
           icon: 'newspaper',
           color: '#9C27B0',
-          articleCount: generalCount
+          articleCount: state.categoryCounts.general
         }
       ];
 
       setCategories(updatedCategories);
     };
 
-    if (state.articles.length > 0) {
-      calculateArticleCounts();
+    // Update categories when counts change
+    updateCategoriesWithCounts();
+  }, [state.categoryCounts]);
+
+  // Load category counts when component mounts
+  useEffect(() => {
+    if (state.isInitialized) {
+      getCategoryCounts();
     }
-  }, [state.articles]);
+  }, [state.isInitialized, getCategoryCounts]);
 
   const handleCategoryPress = (category: Category) => {
     // Navigate to CategoryArticles screen instead of News tab
@@ -325,6 +300,9 @@ export function CategoriesScreen() {
           </Text>
         </View>
       </ScrollView>
+      
+      {/* Pinned Banner Ad at bottom */}
+      <PinnedBannerAd />
     </SafeAreaView>
   );
 }

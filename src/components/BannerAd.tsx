@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useAdFree } from '../context/AdFreeContext';
+import { useAdManager } from '../services/adManager';
 import { adService, AdBannerData } from '../services/adService';
 
 interface BannerAdProps {
@@ -19,8 +20,20 @@ interface BannerAdProps {
 export function BannerAd({ style, onAdPress }: BannerAdProps) {
   const { colors } = useTheme();
   const { isAdFree } = useAdFree();
+  const { shouldShowAds, logAdDecision } = useAdManager();
   const [adData, setAdData] = useState<AdBannerData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Log ad decision for debugging
+  useEffect(() => {
+    logAdDecision('BannerAd', shouldShowAds);
+  }, [shouldShowAds, logAdDecision]);
+
+  // Don't render if user has ad-free access - COMPLETE HIDE
+  if (!shouldShowAds) {
+    console.log('🚫 [BannerAd] Completely hidden - user has ad-free access');
+    return null;
+  }
 
   useEffect(() => {
     loadAd();
@@ -31,7 +44,8 @@ export function BannerAd({ style, onAdPress }: BannerAdProps) {
       setIsLoading(true);
       
       // Don't show ads if user has ad-free access
-      if (isAdFree) {
+      if (!shouldShowAds) {
+        console.log('🚫 [BannerAd] Skipping ad load - user has ad-free access');
         setIsLoading(false);
         return;
       }
@@ -60,8 +74,9 @@ export function BannerAd({ style, onAdPress }: BannerAdProps) {
     }
   };
 
-  // Don't render anything if user has ad-free access
-  if (isAdFree) {
+  // Don't render anything if user has ad-free access - COMPLETE HIDE
+  if (!shouldShowAds) {
+    console.log('🚫 [BannerAd] Completely hidden - user has ad-free access');
     return null;
   }
 

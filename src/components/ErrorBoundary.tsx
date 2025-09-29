@@ -1,6 +1,5 @@
 import React, { Component, ReactNode } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 
 interface Props {
   children: ReactNode;
@@ -26,10 +25,6 @@ export class ErrorBoundary extends Component<Props, State> {
     console.error('ErrorBoundary caught an error:', error, errorInfo);
   }
 
-  handleRetry = () => {
-    this.setState({ hasError: false, error: undefined });
-  };
-
   render() {
     if (this.state.hasError) {
       if (this.props.fallback) {
@@ -38,21 +33,16 @@ export class ErrorBoundary extends Component<Props, State> {
 
       return (
         <View style={styles.container}>
-          <View style={styles.content}>
-            <Ionicons name="warning" size={64} color="#FF6B6B" />
-            <Text style={styles.title}>Something went wrong</Text>
-            <Text style={styles.message}>
-              The app encountered an unexpected error. Please try again.
-            </Text>
-            {__DEV__ && this.state.error && (
-              <Text style={styles.errorDetails}>
-                {this.state.error.message}
-              </Text>
-            )}
-            <TouchableOpacity style={styles.retryButton} onPress={this.handleRetry}>
-              <Text style={styles.retryButtonText}>Try Again</Text>
-            </TouchableOpacity>
-          </View>
+          <Text style={styles.title}>Something went wrong</Text>
+          <Text style={styles.message}>
+            {this.state.error?.message || 'An unexpected error occurred'}
+          </Text>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => this.setState({ hasError: false, error: undefined })}
+          >
+            <Text style={styles.buttonText}>Try Again</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -64,44 +54,30 @@ export class ErrorBoundary extends Component<Props, State> {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-  },
-  content: {
-    alignItems: 'center',
-    maxWidth: 300,
+    backgroundColor: '#ffffff',
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333333',
-    marginTop: 16,
-    marginBottom: 8,
-    textAlign: 'center',
+    color: '#000000',
+    marginBottom: 16,
   },
   message: {
     fontSize: 16,
     color: '#666666',
     textAlign: 'center',
-    lineHeight: 24,
     marginBottom: 24,
   },
-  errorDetails: {
-    fontSize: 12,
-    color: '#999999',
-    textAlign: 'center',
-    marginBottom: 24,
-    fontFamily: 'monospace',
-  },
-  retryButton: {
-    backgroundColor: '#007AFF',
+  button: {
+    backgroundColor: '#ff7613',
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
   },
-  retryButtonText: {
+  buttonText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',

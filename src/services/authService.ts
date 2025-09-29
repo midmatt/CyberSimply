@@ -58,9 +58,19 @@ export class AuthService {
     try {
       console.log('🔐 AuthService: Starting authentication initialization...');
       
+      // Check if user wants to stay logged in
+      const stayLoggedIn = await this.getStayLoggedInPreference();
+      console.log('🔐 AuthService: Stay logged in preference:', stayLoggedIn);
+      
+      if (!stayLoggedIn) {
+        // Clear any existing session if user doesn't want to stay logged in
+        console.log('🔐 AuthService: Stay logged in disabled, clearing session...');
+        await supabase.auth.signOut();
+      }
+      
       // Set a timeout to prevent hanging
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Auth initialization timeout')), 10000); // 10 second timeout
+        setTimeout(() => reject(new Error('Auth initialization timeout')), 5000); // 5 second timeout
       });
       
       // Get initial session with timeout
@@ -77,11 +87,11 @@ export class AuthService {
 
       console.log('🔐 AuthService: Session retrieved:', { hasSession: !!session, hasUser: !!session?.user });
 
-      if (session?.user) {
+      if (session?.user && stayLoggedIn) {
         console.log('🔐 AuthService: User found, loading profile...');
         await this.loadUserProfile(session.user.id);
       } else {
-        console.log('🔐 AuthService: No user session, checking for guest mode...');
+        console.log('🔐 AuthService: No user session or stay logged in disabled, checking for guest mode...');
         // Check if user wants to continue as guest
         const guestId = await this.getGuestId();
         if (guestId) {
@@ -259,6 +269,17 @@ export class AuthService {
       await AsyncStorage.removeItem('guest_user_id');
     } catch (error) {
       console.error('Error clearing guest ID:', error);
+    }
+  }
+
+  private async getStayLoggedInPreference(): Promise<boolean> {
+    try {
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      const preference = await AsyncStorage.getItem('stay_logged_in');
+      return preference === 'true';
+    } catch (error) {
+      console.error('Error getting stay logged in preference:', error);
+      return false; // Default to false if error
     }
   }
 
@@ -455,22 +476,47 @@ export class AuthService {
         return { success: false, error: 'Not authenticated' };
       }
 
+      console.log('👤 [AuthService] Updating profile:', updates);
+
       const { error } = await supabase
         .from(TABLES.USER_PROFILES)
-        .update(updates)
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString()
+        })
         .eq('id', this.authState.user.id);
 
       if (error) {
-        console.error('Profile update error:', error);
+        console.error('❌ [AuthService] Profile update error:', error);
         return { success: false, error: error.message };
       }
 
-      // Reload user profile
+      console.log('✅ [AuthService] Profile updated successfully, reloading user profile');
+
+      // Reload user profile to get the latest data
       await this.loadUserProfile(this.authState.user.id);
       return { success: true };
     } catch (error) {
-      console.error('Profile update error:', error);
+      console.error('❌ [AuthService] Profile update error:', error);
       return { success: false, error: 'An unexpected error occurred' };
+    }
+  }
+
+  /**
+   * Refresh user profile from database
+   */
+  public async refreshUserProfile(): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!this.authState.user) {
+        return { success: false, error: 'Not authenticated' };
+      }
+
+      console.log('🔄 [AuthService] Refreshing user profile for:', this.authState.user.id);
+      await this.loadUserProfile(this.authState.user.id);
+      return { success: true };
+    } catch (error) {
+      console.error('❌ [AuthService] Error refreshing user profile:', error);
+      return { success: false, error: 'Failed to refresh profile' };
     }
   }
 

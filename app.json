@@ -7,15 +7,25 @@
     "orientation": "portrait",
     "icon": "./assets/icons/ios-light.png",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "jsEngine": "jsc",
     "scheme": "cybersimply",
+    "privacy": "public",
+    "description": "Stay informed with the latest cybersecurity news, insights, and analysis. Get breaking news, expert analysis, and in-depth coverage of the cybersecurity landscape.",
+    "keywords": [
+      "cybersecurity",
+      "news",
+      "security",
+      "hacking",
+      "privacy",
+      "technology"
+    ],
     "ios": {
       "supportsTablet": true,
       "icon": "./assets/icons/ios-light.png",
       "darkIcon": "./assets/icons/ios-dark.png",
       "tintIcon": "./assets/icons/ios-tinted.png",
-      "buildNumber": "7",
+      "buildNumber": "32",
       "config": {
         "googleMobileAdsAppId": "ca-app-pub-1846982089045102~4493578427"
       },
@@ -24,12 +34,29 @@
           "fetch",
           "processing"
         ],
+        "BGTaskSchedulerPermittedIdentifiers": [
+          "com.cybersimply.app.background-refresh",
+          "com.cybersimply.app.news-processing"
+        ],
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
-        }
+        },
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSUserTrackingUsageDescription": "This app uses tracking to provide personalized news content and improve your experience.",
+        "NSLocationWhenInUseUsageDescription": "This app may use location to provide relevant local cybersecurity news.",
+        "NSCameraUsageDescription": "This app may access your camera to scan QR codes or take photos for security-related features.",
+        "NSMicrophoneUsageDescription": "This app may access your microphone for voice-based security features.",
+        "NSPhotoLibraryUsageDescription": "This app may access your photo library to save security-related images or documents."
       },
       "bundleIdentifier": "com.cybersimply.app",
-      "inAppPurchases": true
+      "inAppPurchases": true,
+      "associatedDomains": [
+        "applinks:cybersimply.com"
+      ],
+      "entitlements": {
+        "com.apple.developer.in-app-payments": true,
+        "com.apple.developer.applesignin": true
+      }
     },
     "android": {
       "icon": "./assets/icons/ios-light.png",
@@ -39,10 +66,22 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
+      "versionCode": 29,
       "config": {
         "googleMobileAdsAppId": "ca-app-pub-1846982089045102~4493578427"
       },
-      "package": "com.cybersimply.app"
+      "package": "com.cybersimply.app",
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.WAKE_LOCK",
+        "android.permission.VIBRATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"

@@ -11,6 +11,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { NewsCard } from '../components/NewsCard';
 import { SearchBar } from '../components/SearchBar';
+import { PinnedBannerAd } from '../components/PinnedBannerAd';
 import { useNews } from '../context/NewsContext';
 import { useTheme } from '../context/ThemeContext';
 import { ProcessedArticle } from '../services/newsService';
@@ -44,54 +45,26 @@ type RouteParams = {
 };
 
 export function CategoryArticlesScreen() {
-  const navigation = useNavigation<NavigationProp>();
-  const route = useRoute<RouteProp<{ params: RouteParams }, 'params'>>();
-  const { state, toggleFavorite, favorites } = useNews();
+  const navigation = useNavigation();
+  const route = useRoute();
+  const { state, toggleFavorite, favorites, switchToCategory, loadMoreNews } = useNews();
   const { colors } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
 
   const { category } = route.params;
 
-  // Filter articles by category
-  const categoryArticles = useMemo(() => {
-    let filtered: ProcessedArticle[] = [];
+  // Load category articles when component mounts
+  useEffect(() => {
+    console.log(`CategoryArticlesScreen: Loading articles for category: ${category.id}`);
+    switchToCategory(category.id);
+  }, [category.id, switchToCategory]);
 
-    switch (category.id) {
-      case 'Security Basics':
-        filtered = state.articles.filter(article => 
-          article.category === 'cybersecurity' && 
-          (article.title.toLowerCase().includes('security') || 
-           article.summary.toLowerCase().includes('security') ||
-           article.title.toLowerCase().includes('protection') ||
-           article.summary.toLowerCase().includes('protection'))
-        );
-        break;
-      case 'Major Breaches':
-        filtered = state.articles.filter(article => 
-          article.title.toLowerCase().includes('breach') || 
-          article.summary.toLowerCase().includes('breach') ||
-          article.title.toLowerCase().includes('attack') ||
-          article.summary.toLowerCase().includes('attack') ||
-          article.title.toLowerCase().includes('hack') ||
-          article.summary.toLowerCase().includes('hack')
-        );
-        break;
-      case 'Scams to Avoid':
-        filtered = state.articles.filter(article => 
-          article.title.toLowerCase().includes('scam') || 
-          article.summary.toLowerCase().includes('scam') ||
-          article.title.toLowerCase().includes('phish') ||
-          article.summary.toLowerCase().includes('phish') ||
-          article.title.toLowerCase().includes('fraud') ||
-          article.summary.toLowerCase().includes('fraud')
-        );
-        break;
-      default:
-        filtered = [];
-    }
-
-    return filtered;
-  }, [state.articles, category.id]);
+  // Use articles from state (which are filtered by category)
+  // Additional client-side filtering to ensure we only show articles for this specific category
+  const categoryArticles = state.articles.filter(article => 
+    article.category === category.id || 
+    (category.id === 'general' && (!article.category || article.category === 'general'))
+  );
 
   // Filter articles based on search query within the category
   const filteredArticles = useMemo(() => {
@@ -198,6 +171,14 @@ export function CategoryArticlesScreen() {
       textAlign: 'center',
       lineHeight: TYPOGRAPHY.body.lineHeight * 1.3,
     },
+    loadingText: {
+      ...TYPOGRAPHY.body,
+      marginBottom: SPACING.sm,
+    },
+    footerText: {
+      ...TYPOGRAPHY.caption,
+      textAlign: 'center',
+    },
   });
 
   const renderArticle = useCallback(({ item }: { item: ProcessedArticle }) => (
@@ -261,7 +242,6 @@ export function CategoryArticlesScreen() {
         </Text>
         
         <SearchBar
-          onSearch={setSearchQuery}
           value={searchQuery}
           onChangeText={setSearchQuery}
           placeholder={`Search in ${category.name}...`}
@@ -276,11 +256,117 @@ export function CategoryArticlesScreen() {
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={true}
-        maxToRenderPerBatch={5}
-        windowSize={10}
-        initialNumToRender={5}
+        maxToRenderPerBatch={10}
+        windowSize={21}
+        initialNumToRender={10}
+        onEndReached={loadMoreNews}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={() => (
+          <View style={{ paddingVertical: SPACING.lg, alignItems: 'center' }}>
+            {state.loadingMore && (
+              <Text style={[styles.emptyStateText, { color: colors.primary }]}>
+                Loading more articles...
+              </Text>
+            )}
+            <Text style={[styles.footerText, { color: colors.textSecondary }]}>
+              Showing {filteredArticles.length} of {state.totalArticles || 0} articles
+            </Text>
+            {!state.hasMore && state.totalArticles > 0 && (
+              <Text style={[styles.footerText, { color: colors.textSecondary, fontStyle: 'italic' }]}>
+                No more articles to load
+              </Text>
+            )}
+            {state.error && (
+              <Text style={[styles.loadingText, { color: colors.error || '#ff4444' }]}>
+                ⚠️ {state.error}
+              </Text>
+            )}
+          </View>
+        )}
       />
+      
+      {/* Pinned Banner Ad at bottom */}
+      <PinnedBannerAd />
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  header: {
+    padding: SPACING.md,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  backText: {
+    ...TYPOGRAPHY.body,
+    marginLeft: SPACING.xs,
+    color: '#007AFF',
+  },
+  categoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  iconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: SPACING.md,
+  },
+  title: {
+    ...TYPOGRAPHY.h2,
+    flex: 1,
+  },
+  subtitle: {
+    ...TYPOGRAPHY.body,
+    color: '#666',
+    marginBottom: SPACING.xs,
+  },
+  articleCount: {
+    ...TYPOGRAPHY.caption,
+    color: '#999',
+  },
+  searchContainer: {
+    padding: SPACING.md,
+  },
+  listContainer: {
+    padding: SPACING.md,
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SPACING.xl,
+  },
+  emptyStateTitle: {
+    ...TYPOGRAPHY.h3,
+    textAlign: 'center',
+    marginTop: SPACING.lg,
+    marginBottom: SPACING.md,
+  },
+  emptyStateText: {
+    ...TYPOGRAPHY.body,
+    textAlign: 'center',
+    color: '#666',
+    lineHeight: 22,
+  },
+  loadingText: {
+    ...TYPOGRAPHY.body,
+    marginBottom: SPACING.sm,
+  },
+  footerText: {
+    ...TYPOGRAPHY.caption,
+    textAlign: 'center',
+  },
+});
 

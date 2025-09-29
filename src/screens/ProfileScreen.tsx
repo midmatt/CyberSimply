@@ -10,18 +10,21 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { useSupabase } from '../context/SupabaseContext';
 import { TYPOGRAPHY, SPACING } from '../constants';
+import { profileImageService } from '../services/profileImageService';
 
 export function ProfileScreen() {
   const { colors } = useTheme();
-  const { authState, signOut, updateProfile } = useSupabase();
+  const { authState, signOut, updateProfile, refreshUserProfile } = useSupabase();
   const navigation = useNavigation();
   
   const [displayName, setDisplayName] = useState('');
@@ -29,14 +32,57 @@ export function ProfileScreen() {
   const [avatarUrl, setAvatarUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [stayLoggedIn, setStayLoggedIn] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   useEffect(() => {
     if (authState.user) {
       setDisplayName(authState.user.displayName || '');
       setEmail(authState.user.email);
-      setAvatarUrl(authState.user.avatarUrl || '');
+      // Use cache-busted URL for avatar
+      const cacheBustedUrl = profileImageService.getProfileImageUrl(authState.user.avatarUrl);
+      setAvatarUrl(cacheBustedUrl || '');
     }
   }, [authState.user]);
+
+  // Load Stay Logged In preference
+  useEffect(() => {
+    loadStayLoggedInPreference();
+  }, []);
+
+  const loadStayLoggedInPreference = async () => {
+    try {
+      const preference = await AsyncStorage.getItem('stay_logged_in');
+      setStayLoggedIn(preference === 'true');
+    } catch (error) {
+      console.error('Error loading stay logged in preference:', error);
+    }
+  };
+
+  const handleStayLoggedInToggle = async (value: boolean) => {
+    try {
+      await AsyncStorage.setItem('stay_logged_in', value.toString());
+      setStayLoggedIn(value);
+      
+      if (value) {
+        Alert.alert(
+          'Stay Logged In Enabled',
+          'You will remain logged in when you restart the app.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          'Stay Logged In Disabled',
+          'You will need to sign in again when you restart the app.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('Error saving stay logged in preference:', error);
+      Alert.alert('Error', 'Failed to update preference');
+    }
+  };
 
   const handleUpdateProfile = async () => {
     if (!authState.user) return;
@@ -62,6 +108,11 @@ export function ProfileScreen() {
   };
 
   const handleImagePicker = async () => {
+    if (!authState.user) {
+      Alert.alert('Error', 'You must be logged in to update your profile picture');
+      return;
+    }
+
     try {
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
       
@@ -78,12 +129,66 @@ export function ProfileScreen() {
       });
 
       if (!result.canceled && result.assets[0]) {
-        // In a real app, you would upload this to Supabase Storage
-        // For now, we'll just set the local state
-        setAvatarUrl(result.assets[0].uri);
-        Alert.alert('Success', 'Profile picture updated! (Note: This is a demo - image not uploaded to server)');
+        const imageUri = result.assets[0].uri;
+        
+        // Show upload progress
+        setIsUploadingImage(true);
+        setUploadProgress(0);
+        
+        // Store old avatar URL for cleanup
+        const oldAvatarUrl = authState.user.avatarUrl;
+        
+        // Update local state immediately for better UX
+        setAvatarUrl(imageUri);
+        
+        try {
+          // Ensure avatar bucket exists
+          const bucketResult = await profileImageService.ensureAvatarBucket();
+          if (!bucketResult.success) {
+            throw new Error(bucketResult.error || 'Failed to ensure avatar bucket');
+          }
+
+          // Upload image and update profile
+          const uploadResult = await profileImageService.updateProfileImage(
+            authState.user.id,
+            imageUri,
+            (progress) => {
+              setUploadProgress(Math.round(progress * 100));
+            }
+          );
+
+          if (uploadResult.success && uploadResult.avatarUrl) {
+            // Update local state with the new URL
+            setAvatarUrl(uploadResult.avatarUrl);
+            
+            // Clean up old image (don't wait for this)
+            if (oldAvatarUrl) {
+              profileImageService.deleteOldProfileImage(oldAvatarUrl).catch(error => {
+                console.warn('Failed to delete old profile image:', error);
+              });
+            }
+            
+            // Refresh user profile to get the latest data
+            await refreshUserProfile();
+            
+            Alert.alert('Success', 'Profile picture updated successfully!');
+          } else {
+            // Revert to old avatar on failure
+            setAvatarUrl(profileImageService.getProfileImageUrl(oldAvatarUrl) || '');
+            Alert.alert('Error', uploadResult.error || 'Failed to update profile picture');
+          }
+        } catch (error) {
+          // Revert to old avatar on failure
+          setAvatarUrl(profileImageService.getProfileImageUrl(oldAvatarUrl) || '');
+          console.error('Profile image update error:', error);
+          Alert.alert('Error', error instanceof Error ? error.message : 'Failed to update profile picture');
+        } finally {
+          setIsUploadingImage(false);
+          setUploadProgress(0);
+        }
       }
     } catch (error) {
+      console.error('Image picker error:', error);
       Alert.alert('Error', 'Failed to pick image');
     }
   };
@@ -106,6 +211,61 @@ export function ProfileScreen() {
         }
       ]
     );
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to delete your account? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete Account', 
+          style: 'destructive',
+          onPress: async () => {
+            await performAccountDeletion();
+          }
+        }
+      ]
+    );
+  };
+
+  const performAccountDeletion = async () => {
+    if (!authState.user) return;
+
+    setIsLoading(true);
+    try {
+      // Call the Supabase RPC function to delete the user
+      const { supabase } = require('../services/supabaseClient');
+      const { error } = await supabase.rpc('delete_user', {
+        uid: authState.user.id
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      // Clear local storage
+      await AsyncStorage.multiRemove(['stay_logged_in', 'guest_user_id']);
+      
+      // Sign out and redirect to login
+      await signOut();
+      
+      Alert.alert(
+        'Account Deleted',
+        'Your account has been successfully deleted.',
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      Alert.alert(
+        'Error',
+        'Failed to delete account. Please try again or contact support.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const renderHeader = () => (
@@ -192,6 +352,31 @@ export function ProfileScreen() {
       height: 30,
       justifyContent: 'center',
       alignItems: 'center',
+    },
+    avatarEditButtonDisabled: {
+      opacity: 0.5,
+    },
+    uploadOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      borderRadius: 50,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    uploadProgress: {
+      backgroundColor: colors.background,
+      borderRadius: 20,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+    },
+    uploadProgressText: {
+      ...TYPOGRAPHY.caption,
+      color: colors.text,
+      fontWeight: '600',
     },
     name: {
       ...TYPOGRAPHY.h2,
@@ -283,6 +468,30 @@ export function ProfileScreen() {
       color: colors.textSecondary,
       marginLeft: SPACING.sm,
     },
+    settingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      backgroundColor: colors.cardBackground,
+      borderRadius: 8,
+      padding: SPACING.md,
+      marginBottom: SPACING.sm,
+    },
+    settingInfo: {
+      flex: 1,
+      marginRight: SPACING.md,
+    },
+    settingLabel: {
+      ...TYPOGRAPHY.body,
+      color: colors.text,
+      fontWeight: '600',
+      marginBottom: SPACING.xs,
+    },
+    settingDescription: {
+      ...TYPOGRAPHY.caption,
+      color: colors.textSecondary,
+      lineHeight: TYPOGRAPHY.caption.lineHeight * 1.2,
+    },
   });
 
   if (!authState.user) {
@@ -313,7 +522,18 @@ export function ProfileScreen() {
                 <Ionicons name="person" size={40} color={colors.textSecondary} />
               </View>
             )}
-            <TouchableOpacity style={styles.avatarEditButton} onPress={handleImagePicker}>
+            {isUploadingImage && (
+              <View style={styles.uploadOverlay}>
+                <View style={styles.uploadProgress}>
+                  <Text style={styles.uploadProgressText}>{uploadProgress}%</Text>
+                </View>
+              </View>
+            )}
+            <TouchableOpacity 
+              style={[styles.avatarEditButton, isUploadingImage && styles.avatarEditButtonDisabled]} 
+              onPress={handleImagePicker}
+              disabled={isUploadingImage}
+            >
               <Ionicons name="camera" size={16} color={colors.background} />
             </TouchableOpacity>
           </View>
@@ -385,13 +605,42 @@ export function ProfileScreen() {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Account Settings</Text>
+          
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Stay Logged In</Text>
+              <Text style={styles.settingDescription}>
+                Keep me signed in when I restart the app
+              </Text>
+            </View>
+            <Switch
+              value={stayLoggedIn}
+              onValueChange={handleStayLoggedInToggle}
+              trackColor={{ false: colors.border, true: colors.accent + '40' }}
+              thumbColor={stayLoggedIn ? colors.accent : colors.textSecondary}
+              disabled={isLoading}
+            />
+          </View>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account Actions</Text>
           
           <TouchableOpacity
             style={[styles.button, styles.dangerButton]}
             onPress={handleSignOut}
+            disabled={isLoading}
           >
             <Text style={[styles.buttonText, styles.dangerButtonText]}>Sign Out</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, styles.dangerButton, { backgroundColor: '#FF3B30', borderColor: '#FF3B30' }]}
+            onPress={handleDeleteAccount}
+            disabled={isLoading}
+          >
+            <Text style={[styles.buttonText, styles.dangerButtonText]}>Delete My Account</Text>
           </TouchableOpacity>
         </View>
         </ScrollView>

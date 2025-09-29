@@ -17,6 +17,7 @@ import { ProcessedArticle } from './newsService';
 // You can switch between OpenAI and Gemini by changing this
 const USE_OPENAI = true; // ✅ ENABLED - API key working with high quota!
 const USE_GEMINI = false; // Disable Gemini completely due to API issues
+const USE_FALLBACK = false; // ❌ DISABLED - No fallback summaries, only real AI summaries
 
 // API Keys - Use environment variables for security
 const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || 'process.env.OPENAI_API_KEY-CXghJFcg9WZhEVet-rR6BmdI-zsIxX_674dZHaeKUJT2h0FJMT0m7rMWmHA_ZWlPAW0RvUW6wtT3BlbkFJhR4I7ENNmwbZxKNDrItE0IHBZpwxYQQw3hh7nhobXzS-aKZR_CTjhXO7fWUWquekl9Gj30oR4A';
@@ -47,15 +48,23 @@ export class AISummarizationService {
         return await this.summarizeWithOpenAIRetry(article);
       } else if (USE_GEMINI) {
         return await this.summarizeWithGemini(article);
-      } else {
-        // Use fallback summary by default to avoid API errors
+      } else if (USE_FALLBACK) {
+        // Use fallback summary only if explicitly enabled
         console.log('Using fallback summary - AI APIs disabled');
         return this.createFallbackSummary(article);
+      } else {
+        // No fallback - throw error if AI APIs are not available
+        throw new Error('AI summarization not available - no APIs enabled and fallback disabled');
       }
     } catch (error) {
       console.error('AI summarization failed:', error);
-      // Always return fallback summary instead of throwing
-      return this.createFallbackSummary(article);
+      if (USE_FALLBACK) {
+        // Only use fallback if explicitly enabled
+        return this.createFallbackSummary(article);
+      } else {
+        // Re-throw error if fallback is disabled
+        throw error;
+      }
     }
   }
 
@@ -306,20 +315,20 @@ Focus on helping non-technical readers understand the situation with clear, comp
         };
       } catch (error) {
         console.error(`❌ Failed to summarize article ${article.id}:`, error);
-        // Use fallback summary
-        const fallback = this.createFallbackSummary(article);
-        return {
-          ...article,
-          what: fallback.what,
-          impact: fallback.impact,
-          takeaways: fallback.takeaways
-        };
+        // Skip articles that can't be summarized instead of using fallback
+        console.warn(`Skipping article ${article.id} due to summarization failure`);
+        return null;
       }
     });
     
     // Wait for all articles to be processed
     const results = await Promise.all(promises);
-    console.log(`🎉 Completed AI summarization for all ${articles.length} articles!`);
-    return results;
+    
+    // Filter out null results (articles that failed summarization)
+    const successfulResults = results.filter((result): result is ProcessedArticle => result !== null);
+    
+    console.log(`🎉 Completed AI summarization: ${successfulResults.length}/${articles.length} articles successfully summarized!`);
+    
+    return successfulResults;
   }
 }

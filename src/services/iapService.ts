@@ -269,7 +269,13 @@ export class IAPService {
         return false;
       }
 
-      const response: any = await InAppPurchases.getPurchaseHistoryAsync();
+      // Add timeout to prevent hanging
+      const response: any = await Promise.race([
+        InAppPurchases.getPurchaseHistoryAsync(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('IAP purchase check timeout')), 5000)
+        )
+      ]);
       
       if (response.responseCode === InAppPurchases.IAPResponseCode.OK && response.results) {
         return response.results.some((purchase: any) => purchase.productId === productId);
@@ -278,6 +284,7 @@ export class IAPService {
       return false;
     } catch (error) {
       console.error('❌ IAP Service: Error checking purchase status:', error);
+      // Don't show error banner for IAP issues - just return false silently
       return false;
     }
   }
