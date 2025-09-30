@@ -169,36 +169,6 @@ Respond ONLY with valid JSON.`;
   }
 }
 
-// --- Generate fallback summary ---
-async function generateFallbackSummary(title) {
-  if (!openaiApiKey) return 'N/A';
-  
-  try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${openaiApiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: 'Generate a brief summary for this article title.' },
-          { role: 'user', content: `Title: ${title}\n\nSummary:` },
-        ],
-        max_tokens: 60,
-        temperature: 0.5,
-      }),
-    });
-    
-    const json = await response.json();
-    return json.choices?.[0]?.message?.content?.trim() || 'N/A';
-  } catch (err) {
-    console.error('❌ Fallback summary generation failed:', err.message);
-    return 'N/A';
-  }
-}
-
 // --- Store articles in Supabase ---
 async function storeArticles(articles) {
   let successCount = 0;
@@ -219,29 +189,21 @@ async function storeArticles(articles) {
     }
 
     try {
-      // Ensure summary is non-empty
-      let summary = article.summary?.trim();
-      if (!summary) {
-        summary = await generateFallbackSummary(article.title);
-        console.log(`   ℹ️ Generated fallback summary`);
-      }
-      summary = summary || 'N/A';
+      // Use AI summarization always, with summary if available, else just title
+      const summaryInput = article.summary?.trim() || '';
+      const aiSummary = await summarizeArticleWithOpenAI(article.title, summaryInput);
+      await wait(250); // Throttle between summarization calls
 
       // Ensure category is valid
       let category = article.category?.trim();
       if (!category || !['cybersecurity', 'hacking', 'general'].includes(category)) {
-        category = await categorizeArticle(article.title, summary);
+        category = await categorizeArticle(article.title, summaryInput);
         console.log(`   ℹ️ Category assigned: ${category}`);
         await wait(250); // Throttle between categorization calls
       }
       category = category || 'general';
 
-      // Get AI summary fields
-      console.log(`   🤖 Generating AI summary...`);
-      const aiSummary = await summarizeArticleWithOpenAI(article.title, summary);
-      await wait(250); // Throttle between summarization calls
-
-      // Force non-empty values
+      // Force non-empty values from AI summary
       const what = aiSummary.what?.trim() || 'N/A';
       const impact = aiSummary.impact?.trim() || 'N/A';
       const takeaways = aiSummary.takeaways?.trim() || 'N/A';
@@ -250,7 +212,7 @@ async function storeArticles(articles) {
       // Build record WITHOUT explicit id - let DB handle it
       const record = {
         title: article.title,
-        summary,
+        summary: article.summary || '',
         source_url: article.source_url,
         redirect_url: article.source_url, // Also set redirect_url
         source: article.source || 'Unknown',
