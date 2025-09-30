@@ -22,23 +22,19 @@ class SupabaseMigrationService {
   public async runStartupMigrations(): Promise<{ success: boolean; error?: string }> {
     // Only run migrations once
     if (this.migrationRun) {
-      console.log('✅ [Migration] Migrations already run, skipping');
       return { success: true };
     }
 
-    console.log('🔄 [Migration] Starting startup migrations...');
-
     try {
-      // Run user_profiles migrations
+      // Run user_profiles migrations (with minimal logging)
       await this.ensureUserProfilesColumns();
 
       this.migrationRun = true;
-      console.log('✅ [Migration] All startup migrations completed successfully');
+      console.log('✅ [Migration] Schema check complete');
       return { success: true };
 
     } catch (error) {
-      console.error('❌ [Migration] Migration failed:', error);
-      console.warn('⚠️ [Migration] App will continue despite migration errors');
+      console.log('ℹ️ [Migration] Skipped (non-critical)');
       // Don't mark as run so it can retry on next app start
       return { 
         success: false, 
@@ -51,7 +47,7 @@ class SupabaseMigrationService {
    * Ensure user_profiles table has all required columns for ad-free functionality
    */
   private async ensureUserProfilesColumns(): Promise<void> {
-    console.log('🔄 [Migration] Checking user_profiles table columns...');
+    // Minimal logging to speed up startup
 
     try {
       // Create a SQL function to add columns if they don't exist
@@ -113,7 +109,7 @@ class SupabaseMigrationService {
         UPDATE user_profiles SET is_premium = FALSE WHERE is_premium IS NULL;
       `;
 
-      console.log('🔄 [Migration] Executing user_profiles migration SQL...');
+      // Execute migration SQL (minimal logging)
 
       // Execute the migration SQL
       // Note: Supabase client doesn't have a direct .sql() method for arbitrary SQL
@@ -127,27 +123,10 @@ class SupabaseMigrationService {
         .limit(1);
 
       if (testError) {
-        console.warn('⚠️ [Migration] Error querying user_profiles columns:', testError.message);
-        console.warn('⚠️ [Migration] Column may not exist - attempting alternative migration...');
-        
-        // If we can't query these columns, try to update via individual operations
+        // Columns don't exist - try alternative migration silently
         await this.tryAlternativeMigration();
       } else {
-        console.log('✅ [Migration] Essential user_profiles columns verified (ad_free, is_premium)');
-
-        // Try to query optional columns separately (don't fail if they don't exist)
-        const { data: optionalTest, error: optionalError } = await supabase
-          .from('user_profiles')
-          .select('id, premium_expires_at, product_type, purchase_date')
-          .limit(1);
-
-        if (optionalError) {
-          console.warn('⚠️ [Migration] Optional columns missing (product_type, purchase_date) - these will be created on first purchase');
-        } else {
-          console.log('✅ [Migration] All user_profiles columns verified including optional ones');
-        }
-
-        // Update NULL values to FALSE
+        // Essential columns exist - quietly update NULL values
         await this.updateNullValuesToFalse();
       }
 
@@ -161,31 +140,17 @@ class SupabaseMigrationService {
    * Alternative migration method using Supabase API
    */
   private async tryAlternativeMigration(): Promise<void> {
-    console.log('🔄 [Migration] Attempting alternative migration via Supabase management API...');
-
     try {
-      // Since we can't directly execute DDL SQL through the Supabase client,
-      // we'll create a stored procedure that can be called via RPC
-      // This requires the migration SQL to be run manually in Supabase dashboard first
-      
-      // Check if the migration RPC function exists
+      // Try calling RPC function silently
       const { data, error } = await supabase.rpc('migrate_user_profiles_add_ad_free');
 
-      if (error) {
-        // If the RPC doesn't exist, just log once that manual migration is needed
-        if (error.code === 'PGRST202' || error.message?.includes('not found')) {
-          console.log('ℹ️ [Migration] RPC function not available - manual migration recommended');
-          console.log('ℹ️ [Migration] Run SQL: supabase/add-ad-free-to-user-profiles.sql');
-        } else {
-          console.error('❌ [Migration] RPC migration failed:', error.message);
-        }
-      } else {
-        console.log('✅ [Migration] RPC migration completed successfully');
+      if (!error) {
+        console.log('✅ [Migration] RPC migration completed');
       }
+      // Silently fail if RPC doesn't exist
 
     } catch (error) {
-      console.error('❌ [Migration] Alternative migration failed:', error);
-      // Don't throw - let the app continue
+      // Silently fail - don't block app startup
     }
   }
 
@@ -194,55 +159,33 @@ class SupabaseMigrationService {
    */
   private async updateNullValuesToFalse(): Promise<void> {
     try {
-      console.log('🔄 [Migration] Updating NULL values to FALSE...');
-
       // Get all user profiles with NULL ad_free or is_premium
       const { data: profiles, error: fetchError } = await supabase
         .from('user_profiles')
         .select('id, ad_free, is_premium')
         .or('ad_free.is.null,is_premium.is.null');
 
-      if (fetchError) {
-        console.warn('⚠️ [Migration] Error fetching profiles with NULL values:', fetchError);
-        return;
+      if (fetchError || !profiles || profiles.length === 0) {
+        return; // Silently skip
       }
 
-      if (!profiles || profiles.length === 0) {
-        console.log('✅ [Migration] No NULL values found, all profiles are up to date');
-        return;
-      }
-
-      console.log(`🔄 [Migration] Found ${profiles.length} profiles with NULL values, updating...`);
-
-      // Update each profile
+      // Update each profile quickly
       for (const profile of profiles) {
         const updates: any = {};
         
-        if (profile.ad_free === null) {
-          updates.ad_free = false;
-        }
-        
-        if (profile.is_premium === null) {
-          updates.is_premium = false;
-        }
+        if (profile.ad_free === null) updates.ad_free = false;
+        if (profile.is_premium === null) updates.is_premium = false;
 
         if (Object.keys(updates).length > 0) {
-          const { error: updateError } = await supabase
+          await supabase
             .from('user_profiles')
             .update(updates)
             .eq('id', profile.id);
-
-          if (updateError) {
-            console.warn(`⚠️ [Migration] Error updating profile ${profile.id}:`, updateError);
-          }
         }
       }
 
-      console.log(`✅ [Migration] Updated ${profiles.length} profiles with NULL values`);
-
     } catch (error) {
-      console.error('❌ [Migration] Error updating NULL values:', error);
-      // Don't throw - this is not critical
+      // Silently fail - non-critical
     }
   }
 

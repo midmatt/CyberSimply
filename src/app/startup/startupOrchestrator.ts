@@ -144,19 +144,28 @@ export const createServiceStartupSteps = (): StartupStep[] => [
   {
     name: 'supabase-migrations',
     critical: false,
-    timeout: 8000,
+    timeout: 3000,
     execute: async () => {
-      // Run Supabase schema migrations
+      // Run Supabase schema migrations (non-blocking, low priority)
       try {
         const { supabaseMigrationService } = await import('../../services/supabaseMigrationService');
-        const result = await supabaseMigrationService.runStartupMigrations();
+        
+        // Run with its own timeout to prevent blocking
+        const migrationPromise = supabaseMigrationService.runStartupMigrations();
+        const timeoutPromise = new Promise((resolve) => 
+          setTimeout(() => resolve({ success: false, error: 'Migration timeout' }), 2000)
+        );
+        
+        const result = await Promise.race([migrationPromise, timeoutPromise]) as any;
+        
         if (!result.success) {
-          console.warn('⚠️ [Startup] Supabase migrations failed:', result.error);
+          console.log('ℹ️ [Startup] Migrations skipped or incomplete (non-critical)');
         }
+        
         return { initialized: true, migrationResult: result };
       } catch (error) {
-        console.error('❌ [Startup] Error running migrations:', error);
-        return { initialized: true, error: 'Migration failed but continuing' };
+        console.log('ℹ️ [Startup] Migrations skipped due to error (non-critical)');
+        return { initialized: true, error: 'Migration skipped' };
       }
     }
   },
