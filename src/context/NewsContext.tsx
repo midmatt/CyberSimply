@@ -5,7 +5,7 @@ import { directSupabaseService, DirectArticle } from '../services/directSupabase
 import { AISummarizationService } from '../services/aiSummarizationService';
 import { ArticleStorageService } from '../services/articleStorageService';
 import { SupabaseArticleService } from '../services/supabaseArticleService';
-import { getRecentArticles as getRecentArticlesFromUtils, getArticlesToArchive, sortArticlesByDate } from '../utils/dateUtils';
+import { getRecentArticles as getRecentArticlesFromUtils, getArticlesToArchive } from '../utils/dateUtils';
 import { testflightDiagnostics } from '../services/testflightDiagnostics';
 
 // Helper function to validate if an article has all required fields

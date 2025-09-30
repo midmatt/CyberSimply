@@ -229,14 +229,14 @@ export class SupabaseArticleServiceProduction {
     const result = await SupabaseQueryWrapper.executeQuery(
       'get_trending_articles',
       async () => {
-        const { data, error } = await supabase
-          .from(TABLES.ARTICLES)
-          .select(`
-            *,
-            article_metrics!left(views, favorites, shares, avg_read_time)
-          `)
-          .order('created_at', { ascending: false })
-          .limit(limit);
+      const { data, error } = await supabase
+        .from(TABLES.ARTICLES)
+        .select(`
+          *,
+          article_metrics!left(views, favorites, shares, avg_read_time)
+        `)
+        .order('published_at', { ascending: false })
+        .limit(limit);
         return { data, error };
       },
       {
