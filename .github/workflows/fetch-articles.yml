@@ -4,12 +4,17 @@ on:
   schedule:
     # Run every 6 hours (4 times per day)
     - cron: '0 */6 * * *'
-  # Also allow manual triggering
   workflow_dispatch:
 
 jobs:
   fetch-articles:
     runs-on: ubuntu-latest
+    # Retry the entire job up to 3 times if it fails
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        attempt: [1, 2, 3]
 
     steps:
       - name: Checkout code
@@ -18,13 +23,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'   # upgraded for Supabase & ESM support
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
         run: npm install
 
-      - name: Fetch and store articles (NewsAPI + NewsData + Auto Categorization)
+      - name: Fetch and store articles (attempt ${{ matrix.attempt }})
         run: node fetch-articles.js
         env:
           NODE_ENV: production
@@ -36,8 +41,8 @@ jobs:
 
       - name: Notify on success
         if: success()
-        run: echo "✅ Successfully fetched fresh articles at $(date)"
+        run: echo "✅ Successfully fetched fresh articles at $(date) on attempt ${{ matrix.attempt }}"
 
       - name: Notify on failure
         if: failure()
-        run: echo "❌ Failed to fetch articles at $(date)"
+        run: echo "❌ Attempt ${{ matrix.attempt }} failed at $(date)"
