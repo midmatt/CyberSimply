@@ -10,32 +10,34 @@ on:
 jobs:
   fetch-articles:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'   # upgrade for ESM compatibility
+          node-version: '20'   # upgraded for Supabase & ESM support
           cache: 'npm'
-        
+
       - name: Install dependencies
         run: npm install
-        
+
       - name: Fetch and store articles
         run: node fetch-more-articles.js
         env:
           NODE_ENV: production
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
+          NEWSDATA_API_KEY: ${{ secrets.NEWSDATA_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Notify on success
         if: success()
         run: echo "✅ Successfully fetched fresh articles at $(date)"
-      
+
       - name: Notify on failure
         if: failure()
         run: echo "❌ Failed to fetch articles at $(date)"
