@@ -1,8 +1,8 @@
 // Simple script to fetch articles from NewsAPI and store in Supabase
 // Run this with: node fetch-articles.js
 
-const { createClient } = require('@supabase/supabase-js');
-const { v4: uuidv4 } = require('uuid');
+import { createClient } from '@supabase/supabase-js';
+import { v4 as uuidv4 } from 'uuid';
 
 // Replace with your actual Supabase credentials
 const supabaseUrl = 'https://uaykrxfhzfkhjwnmvukb.supabase.co';
