@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: 20
       - run: npm install
-      - run: node fetch-more-articles.js
+      - run: node fetch-articles.js
 
       # Alternative approach using Supabase CLI with proper authentication
       - name: Verify Supabase CLI availability
