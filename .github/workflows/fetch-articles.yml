@@ -24,8 +24,8 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Fetch and store articles
-        run: node fetch-more-articles.js
+      - name: Fetch and store articles (NewsAPI + NewsData + Auto Categorization)
+        run: node fetch-articles.js
         env:
           NODE_ENV: production
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
