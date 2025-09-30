@@ -48,6 +48,15 @@ export class DirectSupabaseService {
     try {
       console.log(`🔍 DirectSupabaseService: Fetching ${category || 'all'} articles (limit: ${limit}, offset: ${offset})...`);
       
+      // Log Supabase configuration for debugging
+      console.log('🔧 DirectSupabaseService: Supabase config:', {
+        supabaseUrl: supabase?.supabaseUrl || 'not initialized',
+        hasAnonKey: !!(supabase as any)?.supabaseKey,
+        platform: Platform.OS,
+        isProduction: !__DEV__,
+        __DEV__
+      });
+      
       // Log current time and cutoff for debugging
       const now = new Date();
       const twoWeeksAgo = new Date();
@@ -67,25 +76,10 @@ export class DirectSupabaseService {
       // First, validate table exists and has data
       await this.validateTableState();
       
-      // Use the exact query structure requested: .select('*').order('published_at', { ascending: false }).limit(50)
+      // Use SELECT * to get all columns from articles table
       let query = supabase
         .from('articles')
-        .select(`
-          id,
-          title,
-          source,
-          author,
-          published_at,
-          summary,
-          what,
-          impact,
-          takeaways,
-          why_this_matters,
-          redirect_url,
-          image_url,
-          category,
-          ai_summary_generated
-        `, { count: 'exact' })
+        .select('*', { count: 'exact' })
         .order('published_at', { ascending: false });
 
       // Apply category filter if specified
@@ -112,29 +106,70 @@ export class DirectSupabaseService {
 
       if (error) {
         console.error('❌ DirectSupabaseService: Error fetching articles:', error);
+        console.error('❌ DirectSupabaseService: Full error object:', JSON.stringify(error, null, 2));
         console.error('❌ DirectSupabaseService: Error details:', {
           message: error.message,
           details: error.details,
           hint: error.hint,
-          code: error.code
+          code: error.code,
+          statusCode: (error as any).statusCode,
+          category,
+          offset,
+          limit,
+          platform: Platform.OS,
+          isProduction: !__DEV__
         });
         
         // Log TestFlight diagnostics for errors
         testflightDiagnostics.log('error', 'Supabase query failed', {
           error: error.message,
+          fullError: JSON.stringify(error),
           code: error.code,
+          details: error.details,
+          hint: error.hint,
+          statusCode: (error as any).statusCode,
           category,
           offset,
-          limit
+          limit,
+          platform: Platform.OS,
+          isProduction: !__DEV__,
+          supabaseUrl: supabase?.supabaseUrl || 'unknown',
+          timestamp: new Date().toISOString()
         });
         
-        return { success: false, error: error.message };
+        // Create detailed error message for production debugging
+        const detailedError = `Supabase query failed: ${error.message} (code: ${error.code}, category: ${category}, offset: ${offset}, limit: ${limit})`;
+        
+        return { success: false, error: detailedError };
       }
 
       const totalCount = count || 0;
       const hasMore = (offset + limit) < totalCount;
       
       console.log(`✅ DirectSupabaseService: Found ${data?.length || 0} ${category || 'all'} articles (${offset + 1}-${offset + (data?.length || 0)} of ${totalCount})`);
+      
+      // Log category breakdown for debugging
+      if (data && data.length > 0) {
+        const categoryBreakdown = data.reduce((acc, article) => {
+          const cat = article.category || 'unknown';
+          acc[cat] = (acc[cat] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>);
+        
+        console.log('📊 DirectSupabaseService: Category breakdown:', categoryBreakdown);
+        
+        // Log first few articles for debugging
+        console.log('📋 DirectSupabaseService: First 3 articles:', 
+          data.slice(0, 3).map(a => ({
+            id: a.id?.substring(0, 8),
+            title: a.title?.substring(0, 50),
+            category: a.category,
+            published_at: a.published_at,
+            has_image: !!a.image_url,
+            has_summary: !!a.summary
+          }))
+        );
+      }
       
       // Log TestFlight diagnostics for successful queries
       testflightDiagnostics.log('info', 'Articles fetched successfully', {
@@ -594,11 +629,19 @@ export class DirectSupabaseService {
       
       if (tableError) {
         console.error('❌ DirectSupabaseService: Table validation failed:', tableError);
+        console.error('❌ DirectSupabaseService: Full validation error:', JSON.stringify(tableError, null, 2));
         testflightDiagnostics.log('error', 'Articles table validation failed', {
           error: tableError.message,
+          fullError: JSON.stringify(tableError),
           code: tableError.code,
-          details: tableError.details
+          details: tableError.details,
+          hint: tableError.hint,
+          platform: Platform.OS,
+          isProduction: !__DEV__,
+          timestamp: new Date().toISOString()
         });
+        // Don't throw - just log and continue
+        console.warn('⚠️ DirectSupabaseService: Continuing despite validation error');
         return;
       }
       
