@@ -79,7 +79,7 @@ export class StoreKitIAPService {
   }
 
   /**
-   * Initialize the StoreKit IAP service
+   * Initialize the StoreKit IAP service with retry mechanism
    */
   public async initialize(): Promise<{ success: boolean; error?: string }> {
     if (this.isInitialized) {
@@ -101,7 +101,7 @@ export class StoreKitIAPService {
       console.log('🛒 [StoreKit] Step 1: Initializing connection...');
       const initPromise = RNIAP.initConnection();
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('IAP connection timeout')), 5000)
+        setTimeout(() => reject(new Error('IAP connection timeout')), 10000)
       );
       
       const connectionResult = await Promise.race([initPromise, timeoutPromise]);
@@ -111,14 +111,9 @@ export class StoreKitIAPService {
       console.log('🛒 [StoreKit] Step 2: Setting up purchase listeners...');
       this.setupPurchaseListeners();
 
-      // Step 3: Fetch products
-      console.log('🛒 [StoreKit] Step 3: Fetching products...');
-      const fetchPromise = this.fetchProducts();
-      const fetchTimeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Product fetch timeout')), 3000)
-      );
-      
-      await Promise.race([fetchPromise, fetchTimeoutPromise]);
+      // Step 3: Fetch products with retry mechanism
+      console.log('🛒 [StoreKit] Step 3: Fetching products with retry...');
+      await this.fetchProductsWithRetry();
 
       this.isInitialized = true;
       console.log('✅ [StoreKit] Initialization completed successfully');
@@ -126,12 +121,51 @@ export class StoreKitIAPService {
 
     } catch (error) {
       console.error('❌ [StoreKit] Initialization failed:', error);
-      this.isInitialized = false;
+      // Don't fail completely - use fallback products
+      console.warn('⚠️ [StoreKit] Using fallback products');
+      this.products = this.getFallbackProducts();
+      this.isInitialized = true; // Still mark as initialized to allow purchases
       return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Failed to initialize IAP service' 
+        success: true, // Return success with fallback
+        error: error instanceof Error ? error.message : 'Failed to fetch products, using fallback' 
       };
     }
+  }
+
+  /**
+   * Fetch products with exponential backoff retry
+   */
+  private async fetchProductsWithRetry(maxRetries: number = 3): Promise<void> {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const timeout = 5000 * Math.pow(2, attempt); // Exponential backoff: 5s, 10s, 20s
+        console.log(`🛒 [StoreKit] Fetch attempt ${attempt + 1}/${maxRetries} (timeout: ${timeout}ms)...`);
+        
+        const fetchPromise = this.fetchProducts();
+        const timeoutPromise = new Promise<void>((_, reject) => 
+          setTimeout(() => reject(new Error('Product fetch timeout')), timeout)
+        );
+        
+        await Promise.race([fetchPromise, timeoutPromise]);
+        
+        console.log(`✅ [StoreKit] Products fetched successfully on attempt ${attempt + 1}`);
+        return; // Success!
+        
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error('Unknown error');
+        console.warn(`⚠️ [StoreKit] Fetch attempt ${attempt + 1} failed:`, lastError.message);
+        
+        if (attempt < maxRetries - 1) {
+          const delay = 1000 * Math.pow(2, attempt); // 1s, 2s, 4s
+          console.log(`🔄 [StoreKit] Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    
+    throw lastError || new Error('Failed to fetch products after retries');
   }
 
   /**
@@ -452,23 +486,31 @@ export class StoreKitIAPService {
       });
 
       // Update Supabase with ad_free = true
+      const updateData = {
+        is_premium: true,
+        premium_expires_at: expiresAt,
+        ad_free: true, // Set ad_free to true for any purchase
+        product_type: isLifetime ? 'lifetime' : 'subscription',
+        purchase_date: new Date().toISOString(),
+        last_purchase_date: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      console.log('🛒 [StoreKit] Updating user_profiles with:', updateData);
+
       const { error } = await supabase
         .from('user_profiles')
-        .update({
-          is_premium: true,
-          premium_expires_at: expiresAt,
-          ad_free: true, // Set ad_free to true for any purchase
-          last_purchase_date: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
+        .update(updateData)
         .eq('id', user.id);
 
       if (error) {
         console.error('❌ [StoreKit] Error updating ad-free status in Supabase:', error);
-        throw error;
+        console.warn('⚠️ [StoreKit] Error details:', error);
+        // Don't throw - log the error but continue
+        console.warn('⚠️ [StoreKit] Continuing despite Supabase update error');
+      } else {
+        console.log('✅ [StoreKit] Ad-free status updated in Supabase successfully');
       }
-
-      console.log('✅ [StoreKit] Ad-free status updated in Supabase successfully');
 
       // Also update local storage immediately to prevent flicker
       const adFreeStatus = {

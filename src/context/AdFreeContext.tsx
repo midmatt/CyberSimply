@@ -114,29 +114,45 @@ export function AdFreeProvider({ children }: AdFreeProviderProps) {
       }
       
       // Check Supabase directly (only if verified purchase)
+      // Use optional fields in case columns don't exist yet
       const { data: profile, error: profileError } = await supabase
         .from('user_profiles')
-        .select('ad_free, is_premium, premium_expires_at')
+        .select('*')
         .eq('id', supabaseContext.authState.user.id)
         .single();
 
       if (profileError) {
-        console.error('❌ [AdFree] Error fetching user profile:', profileError);
-        throw new Error('Failed to fetch user profile');
+        console.warn('⚠️ [AdFree] Error fetching user profile:', profileError);
+        // Don't throw - just log warning and assume not ad-free
+        console.log('🔍 [AdFree] Assuming user is not ad-free due to profile error');
+        
+        const status: AdFreeStatus = {
+          isAdFree: false,
+          lastChecked: new Date().toISOString(),
+        };
+        setAdFreeStatus(status);
+        await localStorageService.setAdFreeStatus(status);
+        return;
       }
 
+      // Safely access ad_free with fallback to is_premium (backwards compatibility)
+      const isAdFree = profile?.ad_free ?? profile?.is_premium ?? false;
+      
       console.log('🔍 [AdFree] Supabase profile data:', {
         ad_free: profile?.ad_free,
         is_premium: profile?.is_premium,
         premium_expires_at: profile?.premium_expires_at,
-        userId: supabaseContext?.authState?.user?.id
+        product_type: profile?.product_type,
+        userId: supabaseContext?.authState?.user?.id,
+        computed_isAdFree: isAdFree
       });
 
-      if (profile?.ad_free) {
+      if (isAdFree) {
         // User has verified ad-free access (only set after confirmed purchase)
         const status: AdFreeStatus = {
           isAdFree: true,
-          productType: 'lifetime',
+          productType: (profile?.product_type as 'lifetime' | 'subscription') || 'lifetime',
+          expiresAt: profile?.premium_expires_at,
           lastChecked: new Date().toISOString(),
         };
         
