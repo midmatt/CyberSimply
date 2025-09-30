@@ -1,4 +1,4 @@
-name: Fetch and Summarize Articles (CLI Alternative)
+name: Fetch and Summarize Articles (CLI Alternative) - Updated
 
 on:
   schedule:
