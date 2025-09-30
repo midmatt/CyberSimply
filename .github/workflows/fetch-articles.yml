@@ -18,7 +18,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'   # ⬅️ Upgrade to Node.js 20 (required by supabase-js + uuid ESM)
           cache: 'npm'
 
       - name: Debug repo structure
