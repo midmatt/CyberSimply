@@ -21,6 +21,17 @@ jobs:
       with:
         node-version: '18'
         cache: 'npm'
+    
+    - name: Debug repo structure
+      run: |
+        echo "Current directory:"
+        pwd
+        echo "Repository structure:"
+        ls -la
+        echo "Checking for fetch-more-articles.js:"
+        ls -la fetch-more-articles.js || echo "fetch-more-articles.js not found"
+        echo "Package.json location:"
+        ls -la package.json || echo "package.json not found"
         
     - name: Install dependencies
       run: npm install
@@ -29,6 +40,9 @@ jobs:
       run: node fetch-more-articles.js
       env:
         NODE_ENV: production
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         
     - name: Notify on success
       if: success()
