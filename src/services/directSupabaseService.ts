@@ -50,7 +50,7 @@ export class DirectSupabaseService {
       
       // Log Supabase configuration for debugging
       console.log('🔧 DirectSupabaseService: Supabase config:', {
-        supabaseUrl: supabase?.supabaseUrl || 'not initialized',
+        // supabaseUrl is protected, so we can't access it directly
         hasAnonKey: !!(supabase as any)?.supabaseKey,
         platform: Platform.OS,
         isProduction: !__DEV__,
@@ -90,16 +90,15 @@ export class DirectSupabaseService {
           twoWeeksAgo.setUTCDate(twoWeeksAgo.getUTCDate() - 14);
           twoWeeksAgo.setUTCHours(0, 0, 0, 0); // Start of day in UTC
           query = query.lt('published_at', twoWeeksAgo.toISOString());
+          console.log(`🔍 DirectSupabaseService: Filtering archived articles older than ${twoWeeksAgo.toISOString()}`);
         } else {
           // Use the actual category column from the database
           query = query.eq('category', category);
+          console.log(`🔍 DirectSupabaseService: Filtering by category: ${category}`);
         }
-      } else if (category === 'all') {
-        // For 'all', exclude archived articles (show only recent) - use UTC to avoid timezone issues
-        const twoWeeksAgo = new Date();
-        twoWeeksAgo.setUTCDate(twoWeeksAgo.getUTCDate() - 14);
-        twoWeeksAgo.setUTCHours(0, 0, 0, 0); // Start of day in UTC
-        query = query.gte('published_at', twoWeeksAgo.toISOString());
+      } else if (category === 'all' || !category) {
+        // For 'all' or no category, show ALL articles without date filtering
+        console.log('🔍 DirectSupabaseService: Showing ALL articles (no category or date filtering)');
       }
 
       const { data, error, count } = await query.range(offset, offset + limit - 1);
@@ -133,7 +132,8 @@ export class DirectSupabaseService {
           limit,
           platform: Platform.OS,
           isProduction: !__DEV__,
-          supabaseUrl: supabase?.supabaseUrl || 'unknown',
+          // supabaseUrl is protected, so we cannot access it directly
+          supabaseUrl: (supabase as any)?.supabaseUrl || 'unknown',
           timestamp: new Date().toISOString()
         });
         
@@ -158,17 +158,34 @@ export class DirectSupabaseService {
         
         console.log('📊 DirectSupabaseService: Category breakdown:', categoryBreakdown);
         
-        // Log first few articles for debugging
+        // Log first article with full details for debugging
+        const firstArticle = data[0];
+        console.log('📋 DirectSupabaseService: FIRST ARTICLE FULL DETAILS:', {
+          id: firstArticle.id,
+          title: firstArticle.title?.substring(0, 100),
+          category: firstArticle.category,
+          source: firstArticle.source,
+          published_at: firstArticle.published_at,
+          published_at_parsed: new Date(firstArticle.published_at).toISOString(),
+          age_in_hours: Math.round((new Date().getTime() - new Date(firstArticle.published_at).getTime()) / (1000 * 60 * 60)),
+          has_image: !!firstArticle.image_url,
+          has_summary: !!firstArticle.summary,
+          has_what: !!firstArticle.what,
+          has_impact: !!firstArticle.impact
+        });
+        
+        // Log first 3 articles summary
         console.log('📋 DirectSupabaseService: First 3 articles:', 
           data.slice(0, 3).map(a => ({
-            id: a.id?.substring(0, 8),
-            title: a.title?.substring(0, 50),
+            title: a.title?.substring(0, 50) + '...',
             category: a.category,
             published_at: a.published_at,
-            has_image: !!a.image_url,
-            has_summary: !!a.summary
+            age_hours: Math.round((new Date().getTime() - new Date(a.published_at).getTime()) / (1000 * 60 * 60))
           }))
         );
+      } else {
+        console.warn('⚠️ DirectSupabaseService: NO ARTICLES RETURNED from query!');
+        console.warn('⚠️ DirectSupabaseService: This indicates either empty table or filtering issue');
       }
       
       // Log TestFlight diagnostics for successful queries

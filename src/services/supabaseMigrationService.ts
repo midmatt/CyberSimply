@@ -120,26 +120,32 @@ class SupabaseMigrationService {
       // We need to create an RPC function in Supabase or use the admin API
       // For now, we'll try to execute via a query and handle the error gracefully
 
-      // Try to query the columns to verify they exist
+      // Try to query just the essential columns first
       const { data: testData, error: testError } = await supabase
         .from('user_profiles')
-        .select('id, ad_free, is_premium, premium_expires_at, product_type, purchase_date')
+        .select('id, ad_free, is_premium')
         .limit(1);
 
       if (testError) {
-        console.warn('⚠️ [Migration] Error querying user_profiles columns:', testError);
-        console.warn('⚠️ [Migration] This may indicate missing columns - attempting to fix...');
+        console.warn('⚠️ [Migration] Error querying user_profiles columns:', testError.message);
+        console.warn('⚠️ [Migration] Column may not exist - attempting alternative migration...');
         
         // If we can't query these columns, try to update via individual operations
         await this.tryAlternativeMigration();
       } else {
-        console.log('✅ [Migration] user_profiles columns verified:', {
-          has_ad_free: true,
-          has_is_premium: true,
-          has_premium_expires_at: true,
-          has_product_type: true,
-          has_purchase_date: true
-        });
+        console.log('✅ [Migration] Essential user_profiles columns verified (ad_free, is_premium)');
+
+        // Try to query optional columns separately (don't fail if they don't exist)
+        const { data: optionalTest, error: optionalError } = await supabase
+          .from('user_profiles')
+          .select('id, premium_expires_at, product_type, purchase_date')
+          .limit(1);
+
+        if (optionalError) {
+          console.warn('⚠️ [Migration] Optional columns missing (product_type, purchase_date) - these will be created on first purchase');
+        } else {
+          console.log('✅ [Migration] All user_profiles columns verified including optional ones');
+        }
 
         // Update NULL values to FALSE
         await this.updateNullValuesToFalse();
@@ -166,14 +172,12 @@ class SupabaseMigrationService {
       const { data, error } = await supabase.rpc('migrate_user_profiles_add_ad_free');
 
       if (error) {
-        // If the RPC doesn't exist, log a helpful message
+        // If the RPC doesn't exist, just log once that manual migration is needed
         if (error.code === 'PGRST202' || error.message?.includes('not found')) {
-          console.warn('⚠️ [Migration] Migration RPC function not found');
-          console.warn('⚠️ [Migration] Please run the migration SQL in Supabase dashboard:');
-          console.warn('⚠️ [Migration] supabase/add-ad-free-to-user-profiles.sql');
-          console.warn('⚠️ [Migration] App will continue with available columns');
+          console.log('ℹ️ [Migration] RPC function not available - manual migration recommended');
+          console.log('ℹ️ [Migration] Run SQL: supabase/add-ad-free-to-user-profiles.sql');
         } else {
-          console.error('❌ [Migration] RPC migration failed:', error);
+          console.error('❌ [Migration] RPC migration failed:', error.message);
         }
       } else {
         console.log('✅ [Migration] RPC migration completed successfully');
