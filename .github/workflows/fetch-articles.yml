@@ -39,6 +39,14 @@ jobs:
           NEWSDATA_API_KEY: ${{ secrets.NEWSDATA_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fetch-articles-logs
+          path: fetch-articles.log
+          if-no-files-found: ignore
+
       - name: Notify on success
         if: success()
         run: echo "✅ Successfully fetched fresh articles at $(date) on attempt ${{ matrix.attempt }}"
