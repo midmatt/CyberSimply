@@ -1,56 +1,46 @@
-name: Fetch Fresh Articles
+name: Fetch and Summarize Articles (CLI Alternative)
 
 on:
   schedule:
-    # Run every 6 hours (4 times per day)
-    - cron: '0 */6 * * *'
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 jobs:
-  fetch-articles:
+  fetch:
     runs-on: ubuntu-latest
-    # Retry the entire job up to 3 times if it fails
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        attempt: [1, 2, 3]
-
+    env:
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: 20
+      - run: npm install
+      - run: node scripts/fetch-more-articles.js
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Fetch and store articles (attempt ${{ matrix.attempt }})
-        run: node fetch-articles.js
+      # Alternative approach using Supabase CLI with proper authentication
+      - name: Verify Supabase CLI availability
+        if: ${{ env.SUPABASE_PROJECT_REF != '' && env.SUPABASE_ACCESS_TOKEN != '' }}
+        run: npx supabase@latest --version
+          
+      - name: Test Article Summary Fields
+        if: ${{ env.SUPABASE_PROJECT_REF != '' && env.SUPABASE_ACCESS_TOKEN != '' }}
+        run: |
+          # Login to Supabase
+          npx supabase@latest login --token "$SUPABASE_ACCESS_TOKEN"
+          
+          # Link to project
+          npx supabase@latest link --project-ref "$SUPABASE_PROJECT_REF"
+          
+          # Run test SQL script
+          echo "🔍 Testing article summary fields..."
+          npx supabase@latest db execute ./sql/test-article-summary-check.sql
         env:
-          NODE_ENV: production
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
-          NEWSDATA_API_KEY: ${{ secrets.NEWSDATA_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: fetch-articles-logs
-          path: fetch-articles.log
-          if-no-files-found: ignore
-
-      - name: Notify on success
-        if: success()
-        run: echo "✅ Successfully fetched fresh articles at $(date) on attempt ${{ matrix.attempt }}"
-
-      - name: Notify on failure
-        if: failure()
-        run: echo "❌ Attempt ${{ matrix.attempt }} failed at $(date)"
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
