@@ -142,6 +142,25 @@ export const createServiceStartupSteps = (): StartupStep[] => [
     }
   },
   {
+    name: 'supabase-migrations',
+    critical: false,
+    timeout: 8000,
+    execute: async () => {
+      // Run Supabase schema migrations
+      try {
+        const { supabaseMigrationService } = await import('../../services/supabaseMigrationService');
+        const result = await supabaseMigrationService.runStartupMigrations();
+        if (!result.success) {
+          console.warn('⚠️ [Startup] Supabase migrations failed:', result.error);
+        }
+        return { initialized: true, migrationResult: result };
+      } catch (error) {
+        console.error('❌ [Startup] Error running migrations:', error);
+        return { initialized: true, error: 'Migration failed but continuing' };
+      }
+    }
+  },
+  {
     name: 'ad-free-context',
     critical: false,
     timeout: 3000,
