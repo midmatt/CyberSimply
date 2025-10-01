@@ -21,12 +21,10 @@ import { useSupabase } from '../context/SupabaseContext';
 import { ProcessedArticle } from '../services/newsService';
 import { RootStackParamList } from '../types';
 import { COLORS, TYPOGRAPHY, SPACING } from '../constants';
-import { directSupabaseService } from '../services/directSupabaseService';
-
-type NavigationProp = StackNavigationProp<RootStackParamList>;
+import { directSupabaseService, DirectArticle } from '../services/directSupabaseService';
 
 export function ArchiveScreen() {
-  const navigation = useNavigation<NavigationProp>();
+  const navigation = useNavigation();
   const { colors } = useTheme();
   const { state: newsState, getArchivedArticles } = useNews();
   const { authState } = useSupabase();
@@ -134,15 +132,43 @@ export function ArchiveScreen() {
         console.log('ArchiveScreen: Fetching archived articles from Supabase...');
         
         // Fetch archived articles directly from Supabase
-        const result = await directSupabaseService.getArticlesPaginated({
-          category: 'archived', // This will get articles older than 2 weeks
-          offset: 0,
-          limit: 100 // Get up to 100 archived articles
-        });
+        const result = await directSupabaseService.getArticlesPaginated(
+          100, // limit - Get up to 100 archived articles
+          0, // offset
+          'archived' // category - articles older than 2 weeks
+        );
         
         if (result.success && result.data) {
           console.log(`ArchiveScreen: Successfully loaded ${result.data.length} archived articles from Supabase`);
-          setArchivedArticles(result.data as ProcessedArticle[]);
+          
+          // Convert DirectArticle to ProcessedArticle
+          const processedArticles: ProcessedArticle[] = result.data.map((article: DirectArticle) => {
+            // Determine valid category
+            let validCategory: 'cybersecurity' | 'hacking' | 'general' = 'general';
+            if (article.category === 'cybersecurity' || article.category === 'hacking') {
+              validCategory = article.category;
+            }
+            
+            return {
+              id: article.id,
+              title: article.title,
+              summary: article.summary,
+              source: article.source,
+              sourceUrl: article.redirect_url || '',
+              author: article.author || '',
+              authorDisplay: article.author || article.source || 'Unknown',
+              publishedAt: article.published_at,
+              imageUrl: article.image_url || '',
+              category: validCategory,
+              what: article.what || '',
+              impact: article.impact || '',
+              takeaways: article.takeaways || '',
+              whyThisMatters: article.why_this_matters || '',
+              aiSummaryGenerated: article.ai_summary_generated || false,
+            };
+          });
+          
+          setArchivedArticles(processedArticles);
         } else {
           console.error('ArchiveScreen: Failed to load archived articles:', result.error);
           setArchivedArticles([]);
