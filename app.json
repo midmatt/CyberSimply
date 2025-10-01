@@ -3,29 +3,15 @@
     "name": "CyberSimply",
     "slug": "cybersafe-news",
     "version": "1.0.0",
-    "entryPoint": "./index.js",
     "orientation": "portrait",
     "icon": "./assets/icons/ios-light.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": false,
     "jsEngine": "jsc",
     "scheme": "cybersimply",
-    "privacy": "public",
-    "description": "Stay informed with the latest cybersecurity news, insights, and analysis. Get breaking news, expert analysis, and in-depth coverage of the cybersecurity landscape.",
-    "keywords": [
-      "cybersecurity",
-      "news",
-      "security",
-      "hacking",
-      "privacy",
-      "technology"
-    ],
     "ios": {
       "supportsTablet": true,
-      "icon": "./assets/icons/ios-light.png",
-      "darkIcon": "./assets/icons/ios-dark.png",
-      "tintIcon": "./assets/icons/ios-tinted.png",
-      "buildNumber": "32",
+      "buildNumber": "33",
       "config": {
         "googleMobileAdsAppId": "ca-app-pub-1846982089045102~4493578427"
       },
@@ -49,7 +35,6 @@
         "NSPhotoLibraryUsageDescription": "This app may access your photo library to save security-related images or documents."
       },
       "bundleIdentifier": "com.cybersimply.app",
-      "inAppPurchases": true,
       "associatedDomains": [
         "applinks:cybersimply.com"
       ],
