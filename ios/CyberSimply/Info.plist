@@ -2,6 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
   <dict>
+    <key>BGTaskSchedulerPermittedIdentifiers</key>
+    <array>
+      <string>com.cybersimply.app.background-refresh</string>
+      <string>com.cybersimply.app.news-processing</string>
+    </array>
     <key>CADisableMinimumFrameDurationOnPhone</key>
     <true/>
     <key>CFBundleDevelopmentRegion</key>
@@ -42,6 +47,8 @@
     <string>46</string>
     <key>GADApplicationIdentifier</key>
     <string>ca-app-pub-1846982089045102~4493578427</string>
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>LSRequiresIPhoneOS</key>
@@ -50,47 +57,19 @@
     <dict>
       <key>NSAllowsArbitraryLoads</key>
       <true/>
-      <key>NSExceptionDomains</key>
-      <dict>
-        <key>supabase.co</key>
-        <dict>
-          <key>NSExceptionAllowsInsecureHTTPLoads</key>
-          <true/>
-          <key>NSExceptionMinimumTLSVersion</key>
-          <string>TLSv1.0</string>
-          <key>NSIncludesSubdomains</key>
-          <true/>
-        </dict>
-        <key>newsapi.org</key>
-        <dict>
-          <key>NSExceptionAllowsInsecureHTTPLoads</key>
-          <true/>
-          <key>NSExceptionMinimumTLSVersion</key>
-          <string>TLSv1.0</string>
-          <key>NSIncludesSubdomains</key>
-          <true/>
-        </dict>
-      </dict>
     </dict>
     <key>NSCameraUsageDescription</key>
     <string>This app may access your camera to scan QR codes or take photos for security-related features.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>This app may use location to provide relevant local cybersecurity news.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>This app may access your microphone for voice-based security features.</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>This app may access your photo library to save security-related images or documents.</string>
-    <key>NSLocationWhenInUseUsageDescription</key>
-    <string>This app may use location to provide relevant local cybersecurity news.</string>
-    <key>ITSAppUsesNonExemptEncryption</key>
-    <false/>
     <key>UIBackgroundModes</key>
     <array>
       <string>fetch</string>
       <string>processing</string>
-    </array>
-    <key>BGTaskSchedulerPermittedIdentifiers</key>
-    <array>
-      <string>com.cybersimply.app.background-refresh</string>
-      <string>com.cybersimply.app.news-processing</string>
     </array>
     <key>UILaunchStoryboardName</key>
     <string>SplashScreen</string>
