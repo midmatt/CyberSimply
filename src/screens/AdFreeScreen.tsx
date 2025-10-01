@@ -30,6 +30,7 @@ export function AdFreeScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [products, setProducts] = useState<AdFreeProduct[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
+  const [adFreeStatus, setAdFreeStatus] = useState<{ productType?: 'lifetime' | 'subscription'; expiresAt?: string } | null>(null);
 
   useEffect(() => {
     initializeIAP();
@@ -43,6 +44,10 @@ export function AdFreeScreen() {
         // Load products
         const loadedProducts = storeKitIAPService.getProducts();
         setProducts(loadedProducts);
+        
+        // Check ad-free status and get product type
+        const status = await storeKitIAPService.checkAdFreeStatus();
+        setAdFreeStatus(status);
         
         // Refresh ad-free status from context
         await refreshAdFreeStatus();
@@ -136,6 +141,35 @@ export function AdFreeScreen() {
   };
 
   const handleRestorePurchases = async () => {
+    // Double confirmation for lifetime restore
+    Alert.alert(
+      'Restore Purchases',
+      'Are you sure you want to restore your previous purchases? This will check for any lifetime ad-free purchases linked to your Apple ID.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Restore',
+          onPress: () => {
+            // Second confirmation
+            Alert.alert(
+              'Confirm Restore',
+              'This action will restore any previous lifetime purchases. Continue?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Yes, Restore',
+                  onPress: () => processRestore(),
+                  style: 'default'
+                }
+              ]
+            );
+          }
+        }
+      ]
+    );
+  };
+
+  const processRestore = async () => {
     setIsProcessing(true);
     try {
       const result = await storeKitIAPService.restorePurchases();
@@ -145,7 +179,11 @@ export function AdFreeScreen() {
           Alert.alert(
             'Purchases Restored',
             `Successfully restored ${result.restoredPurchases.length} purchase(s).`,
-            [{ text: 'OK', onPress: () => refreshAdFreeStatus() }]
+            [{ text: 'OK', onPress: async () => {
+              await refreshAdFreeStatus();
+              const status = await storeKitIAPService.checkAdFreeStatus();
+              setAdFreeStatus(status);
+            }}]
           );
         } else {
           Alert.alert('No Purchases Found', 'No previous purchases were found to restore.');
@@ -158,6 +196,30 @@ export function AdFreeScreen() {
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleCancelSubscription = () => {
+    Alert.alert(
+      'Cancel Subscription',
+      'To cancel your monthly subscription:\n\n1. Open Settings on your device\n2. Tap your name at the top\n3. Tap "Subscriptions"\n4. Select "CyberSimply Ad-Free"\n5. Tap "Cancel Subscription"\n\nYour subscription will remain active until the end of the current billing period.',
+      [
+        { text: 'OK' },
+        {
+          text: 'Open Settings',
+          onPress: () => {
+            // On iOS, we can't programmatically cancel subscriptions
+            // But we can direct users to their subscription settings
+            if (Platform.OS === 'ios') {
+              Alert.alert(
+                'Opening Settings',
+                'Please follow the steps above to cancel your subscription in Settings.',
+                [{ text: 'OK' }]
+              );
+            }
+          }
+        }
+      ]
+    );
   };
 
   const styles = StyleSheet.create({
@@ -544,6 +606,33 @@ export function AdFreeScreen() {
             </Text>
           </TouchableOpacity>
         </>
+      )}
+
+      {/* Show appropriate button for active ad-free users */}
+      {isAdFree && adFreeStatus && (
+        <View style={{ marginTop: SPACING.lg }}>
+          {adFreeStatus.productType === 'lifetime' ? (
+            <TouchableOpacity
+              style={[styles.button, styles.secondaryButton]}
+              onPress={handleRestorePurchases}
+              disabled={isProcessing}
+            >
+              <Text style={[styles.buttonText, styles.secondaryButtonText]}>
+                Restore Lifetime Purchase
+              </Text>
+            </TouchableOpacity>
+          ) : adFreeStatus.productType === 'subscription' ? (
+            <TouchableOpacity
+              style={[styles.button, { backgroundColor: '#FF3B30', borderColor: '#FF3B30' }]}
+              onPress={handleCancelSubscription}
+              disabled={isProcessing}
+            >
+              <Text style={[styles.buttonText, { color: colors.background }]}>
+                Cancel Subscription
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
       )}
 
       <View style={styles.footer}>
