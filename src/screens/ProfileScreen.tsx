@@ -15,12 +15,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { useSupabase } from '../context/SupabaseContext';
 import { TYPOGRAPHY, SPACING } from '../constants';
-import { profileImageService } from '../services/profileImageService';
 
 export function ProfileScreen() {
   const { colors } = useTheme();
@@ -29,20 +27,14 @@ export function ProfileScreen() {
   
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [stayLoggedIn, setStayLoggedIn] = useState(false);
-  const [isUploadingImage, setIsUploadingImage] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
 
   useEffect(() => {
     if (authState.user) {
       setDisplayName(authState.user.displayName || '');
       setEmail(authState.user.email);
-      // Use cache-busted URL for avatar
-      const cacheBustedUrl = profileImageService.getProfileImageUrl(authState.user.avatarUrl);
-      setAvatarUrl(cacheBustedUrl || '');
     }
   }, [authState.user]);
 
@@ -107,91 +99,7 @@ export function ProfileScreen() {
     }
   };
 
-  const handleImagePicker = async () => {
-    if (!authState.user) {
-      Alert.alert('Error', 'You must be logged in to update your profile picture');
-      return;
-    }
-
-    try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
-      if (permissionResult.granted === false) {
-        Alert.alert('Permission Required', 'Permission to access camera roll is required!');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        const imageUri = result.assets[0].uri;
-        
-        // Show upload progress
-        setIsUploadingImage(true);
-        setUploadProgress(0);
-        
-        // Store old avatar URL for cleanup
-        const oldAvatarUrl = authState.user.avatarUrl;
-        
-        // Update local state immediately for better UX
-        setAvatarUrl(imageUri);
-        
-        try {
-          // Ensure avatar bucket exists
-          const bucketResult = await profileImageService.ensureAvatarBucket();
-          if (!bucketResult.success) {
-            throw new Error(bucketResult.error || 'Failed to ensure avatar bucket');
-          }
-
-          // Upload image and update profile
-          const uploadResult = await profileImageService.updateProfileImage(
-            authState.user.id,
-            imageUri,
-            (progress) => {
-              setUploadProgress(Math.round(progress * 100));
-            }
-          );
-
-          if (uploadResult.success && uploadResult.avatarUrl) {
-            // Update local state with the new URL
-            setAvatarUrl(uploadResult.avatarUrl);
-            
-            // Clean up old image (don't wait for this)
-            if (oldAvatarUrl) {
-              profileImageService.deleteOldProfileImage(oldAvatarUrl).catch(error => {
-                console.warn('Failed to delete old profile image:', error);
-              });
-            }
-            
-            // Refresh user profile to get the latest data
-            await refreshUserProfile();
-            
-            Alert.alert('Success', 'Profile picture updated successfully!');
-          } else {
-            // Revert to old avatar on failure
-            setAvatarUrl(profileImageService.getProfileImageUrl(oldAvatarUrl) || '');
-            Alert.alert('Error', uploadResult.error || 'Failed to update profile picture');
-          }
-        } catch (error) {
-          // Revert to old avatar on failure
-          setAvatarUrl(profileImageService.getProfileImageUrl(oldAvatarUrl) || '');
-          console.error('Profile image update error:', error);
-          Alert.alert('Error', error instanceof Error ? error.message : 'Failed to update profile picture');
-        } finally {
-          setIsUploadingImage(false);
-          setUploadProgress(0);
-        }
-      }
-    } catch (error) {
-      console.error('Image picker error:', error);
-      Alert.alert('Error', 'Failed to pick image');
-    }
-  };
+  // Profile picture upload removed - feature disabled
 
   const handleSignOut = () => {
     Alert.alert(
@@ -342,42 +250,6 @@ export function ProfileScreen() {
       borderWidth: 2,
       borderColor: colors.border,
     },
-    avatarEditButton: {
-      position: 'absolute',
-      bottom: 0,
-      right: 0,
-      backgroundColor: colors.accent,
-      borderRadius: 15,
-      width: 30,
-      height: 30,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    avatarEditButtonDisabled: {
-      opacity: 0.5,
-    },
-    uploadOverlay: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(0, 0, 0, 0.5)',
-      borderRadius: 50,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    uploadProgress: {
-      backgroundColor: colors.background,
-      borderRadius: 20,
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-    },
-    uploadProgressText: {
-      ...TYPOGRAPHY.caption,
-      color: colors.text,
-      fontWeight: '600',
-    },
     name: {
       ...TYPOGRAPHY.h2,
       color: colors.text,
@@ -515,27 +387,9 @@ export function ProfileScreen() {
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
         <View style={styles.header}>
           <View style={styles.avatarContainer}>
-            {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={styles.avatar} />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Ionicons name="person" size={40} color={colors.textSecondary} />
-              </View>
-            )}
-            {isUploadingImage && (
-              <View style={styles.uploadOverlay}>
-                <View style={styles.uploadProgress}>
-                  <Text style={styles.uploadProgressText}>{uploadProgress}%</Text>
-                </View>
-              </View>
-            )}
-            <TouchableOpacity 
-              style={[styles.avatarEditButton, isUploadingImage && styles.avatarEditButtonDisabled]} 
-              onPress={handleImagePicker}
-              disabled={isUploadingImage}
-            >
-              <Ionicons name="camera" size={16} color={colors.background} />
-            </TouchableOpacity>
+            <View style={styles.avatarPlaceholder}>
+              <Ionicons name="person" size={40} color={colors.textSecondary} />
+            </View>
           </View>
           <Text style={styles.name}>{displayName || 'No name set'}</Text>
           <Text style={styles.email}>{email}</Text>

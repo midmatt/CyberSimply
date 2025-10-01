@@ -200,25 +200,9 @@ export function AdFreeScreen() {
 
   const handleCancelSubscription = () => {
     Alert.alert(
-      'Cancel Subscription',
-      'To cancel your monthly subscription:\n\n1. Open Settings on your device\n2. Tap your name at the top\n3. Tap "Subscriptions"\n4. Select "CyberSimply Ad-Free"\n5. Tap "Cancel Subscription"\n\nYour subscription will remain active until the end of the current billing period.',
-      [
-        { text: 'OK' },
-        {
-          text: 'Open Settings',
-          onPress: () => {
-            // On iOS, we can't programmatically cancel subscriptions
-            // But we can direct users to their subscription settings
-            if (Platform.OS === 'ios') {
-              Alert.alert(
-                'Opening Settings',
-                'Please follow the steps above to cancel your subscription in Settings.',
-                [{ text: 'OK' }]
-              );
-            }
-          }
-        }
-      ]
+      'Manage Subscription',
+      'To manage or cancel your monthly subscription:\n\n1. Open the App Store app\n2. Tap your profile icon (top right)\n3. Tap "Subscriptions"\n4. Select "CyberSimply Ad-Free Monthly"\n5. Choose "Cancel Subscription" or modify your plan\n\nNote: In TestFlight, subscriptions may not appear. This feature works in production builds from the App Store.\n\nYour subscription will remain active until the end of the current billing period if cancelled.',
+      [{ text: 'Got It' }]
     );
   };
 
@@ -608,30 +592,21 @@ export function AdFreeScreen() {
         </>
       )}
 
-      {/* Show appropriate button for active ad-free users */}
-      {isAdFree && adFreeStatus && (
+      {/* Show cancel subscription button for active monthly subscribers */}
+      {isAdFree && adFreeStatus && adFreeStatus.productType === 'subscription' && (
         <View style={{ marginTop: SPACING.lg }}>
-          {adFreeStatus.productType === 'lifetime' ? (
-            <TouchableOpacity
-              style={[styles.button, styles.secondaryButton]}
-              onPress={handleRestorePurchases}
-              disabled={isProcessing}
-            >
-              <Text style={[styles.buttonText, styles.secondaryButtonText]}>
-                Restore Lifetime Purchase
-              </Text>
-            </TouchableOpacity>
-          ) : adFreeStatus.productType === 'subscription' ? (
-            <TouchableOpacity
-              style={[styles.button, { backgroundColor: '#FF3B30', borderColor: '#FF3B30' }]}
-              onPress={handleCancelSubscription}
-              disabled={isProcessing}
-            >
-              <Text style={[styles.buttonText, { color: colors.background }]}>
-                Cancel Subscription
-              </Text>
-            </TouchableOpacity>
-          ) : null}
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: '#FF3B30', borderColor: '#FF3B30' }]}
+            onPress={handleCancelSubscription}
+            disabled={isProcessing}
+          >
+            <Text style={[styles.buttonText, { color: colors.background }]}>
+              Manage Subscription
+            </Text>
+          </TouchableOpacity>
+          <Text style={{ ...TYPOGRAPHY.caption, color: colors.textSecondary, textAlign: 'center', marginTop: SPACING.sm }}>
+            Cancel or modify your subscription in iOS Settings
+          </Text>
         </View>
       )}
 

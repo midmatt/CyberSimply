@@ -39,7 +39,7 @@
       </dict>
     </array>
     <key>CFBundleVersion</key>
-    <string>42</string>
+    <string>44</string>
     <key>GADApplicationIdentifier</key>
     <string>ca-app-pub-1846982089045102~4493578427</string>
     <key>LSMinimumSystemVersion</key>
@@ -78,8 +78,6 @@
     <string>This app may access your microphone for voice-based security features.</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>This app may access your photo library to save security-related images or documents.</string>
-    <key>NSUserTrackingUsageDescription</key>
-    <string>This app uses tracking to provide personalized news content and improve your experience.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>This app may use location to provide relevant local cybersecurity news.</string>
     <key>ITSAppUsesNonExemptEncryption</key>

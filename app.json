@@ -11,7 +11,7 @@
     "scheme": "cybersimply",
     "ios": {
       "supportsTablet": true,
-      "buildNumber": "42",
+      "buildNumber": "44",
       "config": {
         "googleMobileAdsAppId": "ca-app-pub-1846982089045102~4493578427"
       },
@@ -28,7 +28,6 @@
           "NSAllowsArbitraryLoads": true
         },
         "ITSAppUsesNonExemptEncryption": false,
-        "NSUserTrackingUsageDescription": "This app uses tracking to provide personalized news content and improve your experience.",
         "NSLocationWhenInUseUsageDescription": "This app may use location to provide relevant local cybersecurity news.",
         "NSCameraUsageDescription": "This app may access your camera to scan QR codes or take photos for security-related features.",
         "NSMicrophoneUsageDescription": "This app may access your microphone for voice-based security features.",
