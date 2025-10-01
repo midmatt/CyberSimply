@@ -42,7 +42,7 @@ export function ExpandableSummary({
     if (sentences.length === 0) return { preview: cleanText, truncated: false };
     
     // Calculate target length based on maxLines
-    const targetChars = Math.max(220, (maxLines ?? 3) * 8 * 6); // ~6 chars/word heuristic
+    const targetChars = Math.max(400, (maxLines ?? 3) * 12 * 8); // ~8 chars/word heuristic for better display
     
     let preview = '';
     let totalLength = 0;
