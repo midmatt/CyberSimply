@@ -16,6 +16,7 @@ interface AdFreeContextType {
   isAdFree: boolean;
   checkAdFreeStatus: () => Promise<void>;
   refreshAdFreeStatus: () => Promise<void>;
+  clearAdFreeStatus: () => Promise<void>; // For when user cancels subscription
   isLoading: boolean;
   error: string | null;
 }
@@ -43,13 +44,12 @@ export function AdFreeProvider({ children }: AdFreeProviderProps) {
   // Load ad-free status when user changes
   useEffect(() => {
     if (supabaseContext?.authState?.isAuthenticated && supabaseContext?.authState?.user) {
-      // Clear any cached ad-free status when user changes to prevent cross-user contamination
-      localStorageService.clearAdFreeStatus();
+      // Check ad-free status from Supabase (account-based)
       checkAdFreeStatus();
     } else {
       setAdFreeStatus(null);
       setError(null);
-      // Clear cached status when user logs out
+      // Only clear local cache when user logs out (not the Supabase data)
       localStorageService.clearAdFreeStatus();
     }
   }, [supabaseContext?.authState?.isAuthenticated, supabaseContext?.authState?.user]);
@@ -220,6 +220,43 @@ export function AdFreeProvider({ children }: AdFreeProviderProps) {
     await checkAdFreeStatus();
   };
 
+  const clearAdFreeStatus = async () => {
+    console.log('🗑️ [AdFree] Clearing ad-free status (subscription cancelled)');
+    
+    // Clear local cache
+    await localStorageService.clearAdFreeStatus();
+    
+    // Update Supabase to remove ad-free status
+    if (supabaseContext?.authState?.user?.id) {
+      try {
+        const { error } = await supabase
+          .from('user_profiles')
+          .update({
+            ad_free: false,
+            is_premium: false,
+            premium_expires_at: null,
+            product_type: null,
+            purchase_date: null
+          })
+          .eq('id', supabaseContext.authState.user.id);
+
+        if (error) {
+          console.error('❌ [AdFree] Error updating Supabase:', error);
+        } else {
+          console.log('✅ [AdFree] Updated Supabase to remove ad-free status');
+        }
+      } catch (error) {
+        console.error('❌ [AdFree] Error updating Supabase:', error);
+      }
+    }
+    
+    // Update local state
+    setAdFreeStatus({
+      isAdFree: false,
+      lastChecked: new Date().toISOString(),
+    });
+  };
+
   const isAdFree = adFreeStatus?.isAdFree || false;
 
   const value: AdFreeContextType = {
@@ -227,6 +264,7 @@ export function AdFreeProvider({ children }: AdFreeProviderProps) {
     isAdFree,
     checkAdFreeStatus,
     refreshAdFreeStatus,
+    clearAdFreeStatus,
     isLoading,
     error,
   };

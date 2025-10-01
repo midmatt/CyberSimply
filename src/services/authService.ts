@@ -421,11 +421,11 @@ export class AuthService {
       const AsyncStorage = require('@react-native-async-storage/async-storage').default;
       await AsyncStorage.multiRemove([
         'stay_logged_in',
-        'guest_user_id',
-        'ad_free_status',
-        'ad_free_last_sync'
+        'guest_user_id'
+        // Note: ad_free_status and ad_free_last_sync are NOT cleared here
+        // because IAP/subscriptions are account-based, not device-based
       ]);
-      console.log('🧹 [AuthService] Cleared all user-specific data');
+      console.log('🧹 [AuthService] Cleared user session data (preserved IAP status)');
     } catch (error) {
       console.error('❌ [AuthService] Error clearing user data:', error);
     }

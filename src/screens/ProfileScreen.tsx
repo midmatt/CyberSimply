@@ -189,7 +189,7 @@ export function ProfileScreen() {
         }
       }
 
-      // Clear all local storage
+      // Clear all local storage (including IAP status since account is being deleted)
       console.log('🗑️ [ProfileScreen] Clearing local storage...');
       await AsyncStorage.multiRemove([
         'stay_logged_in', 
