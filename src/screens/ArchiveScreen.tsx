@@ -21,6 +21,7 @@ import { useSupabase } from '../context/SupabaseContext';
 import { ProcessedArticle } from '../services/newsService';
 import { RootStackParamList } from '../types';
 import { COLORS, TYPOGRAPHY, SPACING } from '../constants';
+import { directSupabaseService } from '../services/directSupabaseService';
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -122,26 +123,41 @@ export function ArchiveScreen() {
     console.log('Toggle favorite:', articleId);
   }, []);
 
-  // Get archived articles (older than a week)
+  // Get archived articles (older than two weeks) directly from Supabase
   const [archivedArticles, setArchivedArticles] = useState<ProcessedArticle[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   
   useEffect(() => {
     const loadArchivedArticles = async () => {
       try {
-        const articles = await getArchivedArticles();
-        setArchivedArticles(articles);
-        console.log(`ArchiveScreen: Loaded ${articles.length} archived articles`);
+        setIsLoading(true);
+        console.log('ArchiveScreen: Fetching archived articles from Supabase...');
+        
+        // Fetch archived articles directly from Supabase
+        const result = await directSupabaseService.getArticlesPaginated({
+          category: 'archived', // This will get articles older than 2 weeks
+          offset: 0,
+          limit: 100 // Get up to 100 archived articles
+        });
+        
+        if (result.success && result.data) {
+          console.log(`ArchiveScreen: Successfully loaded ${result.data.length} archived articles from Supabase`);
+          setArchivedArticles(result.data as ProcessedArticle[]);
+        } else {
+          console.error('ArchiveScreen: Failed to load archived articles:', result.error);
+          setArchivedArticles([]);
+        }
       } catch (error) {
-        console.error('Failed to load archived articles:', error);
+        console.error('ArchiveScreen: Failed to load archived articles:', error);
         setArchivedArticles([]);
+      } finally {
+        setIsLoading(false);
       }
     };
     
-    // Only load articles after initialization is complete
-    if (newsState.isInitialized) {
-      loadArchivedArticles();
-    }
-  }, [getArchivedArticles, newsState.isInitialized]);
+    // Load articles when component mounts
+    loadArchivedArticles();
+  }, []); // Empty dependency array - load once on mount
 
   // Filter archived articles based on search query
   const filteredArticles = useMemo(() => {
@@ -180,6 +196,15 @@ export function ArchiveScreen() {
   };
 
   const renderEmptyState = useCallback(() => {
+    if (isLoading) {
+      return (
+        <View style={styles.emptyState}>
+          <ActivityIndicator size="large" color={colors.accent} />
+          <Text style={styles.emptyStateText}>Loading archived articles...</Text>
+        </View>
+      );
+    }
+
     if (searchQuery.trim() && filteredArticles.length === 0) {
       return (
         <View style={styles.emptyState}>
@@ -197,7 +222,7 @@ export function ArchiveScreen() {
         </Text>
       </View>
     );
-  }, [searchQuery, filteredArticles.length]);
+  }, [isLoading, searchQuery, filteredArticles.length, colors.accent]);
 
   // Header is now rendered directly in JSX to maintain SearchBar focus
 
