@@ -15,7 +15,7 @@ console.log("🔄 Redirecting to main fetch-articles.js script...");
 console.log("⚠️  Note: Update workflows to use 'node fetch-articles.js' directly");
 
 // Path to the main script (one level up from scripts/ directory)
-const mainScriptPath = join(__dirname, '..', 'fetch-articles.js');
+const mainScriptPath = join(__dirname, '..', 'fetch-articles.mjs');
 
 // Run the main script
 const child = spawn('node', [mainScriptPath], {
