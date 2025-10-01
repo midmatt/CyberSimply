@@ -23,6 +23,21 @@ jobs:
         with:
           node-version: 20
       - run: npm install
+      
+      - name: Debug - Check file structure
+        run: |
+          echo "📂 Current directory:"
+          pwd
+          echo ""
+          echo "📂 Repository structure:"
+          ls -la
+          echo ""
+          echo "📂 Scripts directory:"
+          ls -la scripts/ || echo "scripts/ directory not found"
+          echo ""
+          echo "📂 Root JS files:"
+          ls -la *.js || echo "No JS files in root"
+      
       - run: node fetch-articles.js
 
       # Alternative approach using Supabase CLI with proper authentication
