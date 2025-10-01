@@ -198,6 +198,7 @@ export class AuthService {
           email: user.email || '',
           display_name: user.user_metadata?.display_name || user.email || 'User',
           is_premium: false,
+          ad_free: false, // Ensure new users start with ad_free: false
         })
         .select()
         .single();
@@ -393,6 +394,7 @@ export class AuthService {
       if (this.authState.isGuest) {
         // For guest users, just clear the state
         await this.clearGuestId();
+        await this.clearAllUserData();
         this.updateAuthState({ user: null, isLoading: false, isAuthenticated: false, isGuest: false });
         return { success: true };
       }
@@ -404,11 +406,28 @@ export class AuthService {
         return { success: false, error: error.message };
       }
 
+      // Clear all user-specific data to prevent cross-user contamination
+      await this.clearAllUserData();
       this.updateAuthState({ user: null, isLoading: false, isAuthenticated: false, isGuest: false });
       return { success: true };
     } catch (error) {
       console.error('Sign out error:', error);
       return { success: false, error: 'An unexpected error occurred' };
+    }
+  }
+
+  private async clearAllUserData(): Promise<void> {
+    try {
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      await AsyncStorage.multiRemove([
+        'stay_logged_in',
+        'guest_user_id',
+        'ad_free_status',
+        'ad_free_last_sync'
+      ]);
+      console.log('🧹 [AuthService] Cleared all user-specific data');
+    } catch (error) {
+      console.error('❌ [AuthService] Error clearing user data:', error);
     }
   }
 

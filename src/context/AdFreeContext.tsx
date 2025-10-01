@@ -43,10 +43,14 @@ export function AdFreeProvider({ children }: AdFreeProviderProps) {
   // Load ad-free status when user changes
   useEffect(() => {
     if (supabaseContext?.authState?.isAuthenticated && supabaseContext?.authState?.user) {
+      // Clear any cached ad-free status when user changes to prevent cross-user contamination
+      localStorageService.clearAdFreeStatus();
       checkAdFreeStatus();
     } else {
       setAdFreeStatus(null);
       setError(null);
+      // Clear cached status when user logs out
+      localStorageService.clearAdFreeStatus();
     }
   }, [supabaseContext?.authState?.isAuthenticated, supabaseContext?.authState?.user]);
 

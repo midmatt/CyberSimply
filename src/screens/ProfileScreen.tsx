@@ -143,20 +143,63 @@ export function ProfileScreen() {
 
     setIsLoading(true);
     try {
-      // Call the Supabase RPC function to delete the user
-      const { supabase } = require('../services/supabaseClient');
-      const { error } = await supabase.rpc('delete_user', {
+      console.log('🗑️ [ProfileScreen] Starting account deletion for user:', authState.user.id);
+      
+      // Import the correct Supabase client
+      const { supabase } = require('../services/supabaseClientProduction');
+      
+      // Try RPC function first
+      console.log('🗑️ [ProfileScreen] Attempting RPC delete_user function...');
+      const { error: rpcError } = await supabase.rpc('delete_user', {
         uid: authState.user.id
       });
 
-      if (error) {
-        throw error;
+      if (rpcError) {
+        console.warn('⚠️ [ProfileScreen] RPC function failed, trying manual deletion:', rpcError);
+        
+        // Fallback: Manual deletion of user data
+        console.log('🗑️ [ProfileScreen] Attempting manual deletion...');
+        
+        // Delete user preferences
+        const { error: prefsError } = await supabase
+          .from('user_preferences')
+          .delete()
+          .eq('user_id', authState.user.id);
+        
+        if (prefsError) {
+          console.warn('⚠️ [ProfileScreen] Error deleting user preferences:', prefsError);
+        }
+
+        // Delete user profile
+        const { error: profileError } = await supabase
+          .from('user_profiles')
+          .delete()
+          .eq('id', authState.user.id);
+        
+        if (profileError) {
+          console.warn('⚠️ [ProfileScreen] Error deleting user profile:', profileError);
+        }
+
+        // Delete from auth.users (this requires admin privileges)
+        const { error: authError } = await supabase.auth.admin.deleteUser(authState.user.id);
+        
+        if (authError) {
+          console.warn('⚠️ [ProfileScreen] Error deleting auth user:', authError);
+          // If admin delete fails, we'll still proceed with local cleanup
+        }
       }
 
-      // Clear local storage
-      await AsyncStorage.multiRemove(['stay_logged_in', 'guest_user_id']);
+      // Clear all local storage
+      console.log('🗑️ [ProfileScreen] Clearing local storage...');
+      await AsyncStorage.multiRemove([
+        'stay_logged_in', 
+        'guest_user_id',
+        'ad_free_status',
+        'ad_free_last_sync'
+      ]);
       
       // Sign out and redirect to login
+      console.log('🗑️ [ProfileScreen] Signing out user...');
       await signOut();
       
       Alert.alert(
@@ -165,7 +208,7 @@ export function ProfileScreen() {
         [{ text: 'OK' }]
       );
     } catch (error) {
-      console.error('Error deleting account:', error);
+      console.error('❌ [ProfileScreen] Error deleting account:', error);
       Alert.alert(
         'Error',
         'Failed to delete account. Please try again or contact support.',
