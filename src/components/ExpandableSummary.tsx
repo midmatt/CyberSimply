@@ -41,36 +41,19 @@ export function ExpandableSummary({
     
     if (sentences.length === 0) return { preview: cleanText, truncated: false };
     
-    // Calculate target length based on maxLines
-    const targetChars = Math.max(400, (maxLines ?? 3) * 12 * 8); // ~8 chars/word heuristic for better display
+    // Use maxLines to determine number of sentences to show (default 3-4 sentences)
+    const targetSentences = maxLines ?? 3;
     
-    let preview = '';
-    let totalLength = 0;
+    // Take only the first N sentences
+    const previewSentences = sentences.slice(0, targetSentences);
+    const preview = previewSentences.join(' ').trim();
     
-    for (const sentence of sentences) {
-      const sentenceWithSpace = preview ? ' ' + sentence : sentence;
-      const newLength = totalLength + sentenceWithSpace.length;
-      
-      // If adding this sentence would exceed target, stop here
-      if (newLength > targetChars && preview.length > 0) {
-        break;
-      }
-      
-      preview += sentenceWithSpace;
-      totalLength = newLength;
-    }
-    
-    // Ensure preview ends properly
-    preview = preview.trim();
-    
-    // Only add period if we're truncating and it doesn't end with punctuation
-    if (preview.length < cleanText.length && !/[.!?]$/.test(preview)) {
-      preview += '.';
-    }
+    // Check if we truncated
+    const truncated = sentences.length > targetSentences;
     
     return { 
       preview, 
-      truncated: preview.length < cleanText.length 
+      truncated 
     };
   }, [maxLines]);
 
