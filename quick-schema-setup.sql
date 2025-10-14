@@ -53,8 +53,14 @@ CREATE TRIGGER update_user_profiles_updated_at
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.user_profiles (id, email, display_name)
-  VALUES (NEW.id, NEW.email, COALESCE(NEW.raw_user_meta_data->>'display_name', NEW.email));
+  INSERT INTO public.user_profiles (id, email, display_name, is_premium, ad_free)
+  VALUES (
+    NEW.id, 
+    NEW.email, 
+    COALESCE(NEW.raw_user_meta_data->>'display_name', NEW.email),
+    FALSE,  -- Ensure new users start with is_premium = FALSE
+    FALSE   -- Ensure new users start with ad_free = FALSE
+  );
   
   RETURN NEW;
 END;

@@ -20,22 +20,44 @@ const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // --- Fetch from NewsAPI ---
 async function fetchNewsAPIArticles() {
-  const response = await fetch(
-    `https://newsapi.org/v2/everything?q=cybersecurity&apiKey=${newsApiKey}&pageSize=20&sortBy=publishedAt&language=en`
-  );
-  if (!response.ok) throw new Error(`NewsAPI failed: ${response.statusText}`);
-  const data = await response.json();
-  if (data.status !== 'ok') throw new Error(`NewsAPI error: ${data.message}`);
-  return data.articles.map((a) => ({
-    title: a.title,
-    summary: a.description || '',
-    source_url: a.url, // NewsAPI uses 'url'
-    source: a.source?.name || 'NewsAPI',
-    author: a.author,
-    published_at: a.publishedAt ? new Date(a.publishedAt).toISOString() : new Date().toISOString(),
-    image_url: a.urlToImage,
-    category: '', // Will be filled later
-  }));
+  try {
+    const response = await fetch(
+      `https://newsapi.org/v2/everything?q=cybersecurity&apiKey=${newsApiKey}&pageSize=20&sortBy=publishedAt&language=en`
+    );
+    
+    if (!response.ok) {
+      throw new Error(`NewsAPI HTTP error: ${response.status} ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    // Check for rate limit error
+    if (data.status === 'error') {
+      if (data.code === 'rateLimited' || data.message?.includes('too many requests')) {
+        throw new Error('RATE_LIMIT_EXCEEDED');
+      }
+      throw new Error(`NewsAPI error: ${data.code} - ${data.message}`);
+    }
+    
+    if (data.status !== 'ok') {
+      throw new Error(`NewsAPI error: ${data.message}`);
+    }
+    
+    return data.articles.map((a) => ({
+      title: a.title,
+      summary: a.description || '',
+      source_url: a.url, // NewsAPI uses 'url'
+      source: a.source?.name || 'NewsAPI',
+      author: a.author,
+      published_at: a.publishedAt ? new Date(a.publishedAt).toISOString() : new Date().toISOString(),
+      image_url: a.urlToImage,
+      category: '', // Will be filled later
+    }));
+  } catch (error) {
+    // Re-throw with context
+    error.isRateLimit = error.message === 'RATE_LIMIT_EXCEEDED';
+    throw error;
+  }
 }
 
 // --- Fetch from NewsData.io ---
@@ -274,13 +296,61 @@ async function main() {
     console.log('🚀 Starting article fetch process...');
     console.log('='.repeat(60));
 
-    console.log('🔄 Fetching NewsAPI articles...');
-    const newsAPIArticles = await fetchNewsAPIArticles();
-    console.log(`   ✅ Fetched ${newsAPIArticles.length} NewsAPI articles`);
+    let newsAPIArticles = [];
+    let newsAPIFailed = false;
+    let usedFallback = false;
 
+    // Try NewsAPI first
+    console.log('🔄 Fetching NewsAPI articles...');
+    try {
+      newsAPIArticles = await fetchNewsAPIArticles();
+      console.log(`   ✅ Fetched ${newsAPIArticles.length} NewsAPI articles`);
+    } catch (error) {
+      newsAPIFailed = true;
+      
+      if (error.isRateLimit) {
+        console.log('   ⚠️  NewsAPI rate limit exceeded - falling back to NewsDataAPI only');
+        usedFallback = true;
+      } else {
+        console.error('   ❌ NewsAPI fetch failed:', error.message);
+      }
+    }
+
+    // Fetch NewsData articles
     console.log('🔄 Fetching NewsData articles...');
-    const newsDataArticles = await fetchNewsDataArticles();
-    console.log(`   ✅ Fetched ${newsDataArticles.length} NewsData articles`);
+    let newsDataArticles = [];
+    try {
+      newsDataArticles = await fetchNewsDataArticles();
+      console.log(`   ✅ Fetched ${newsDataArticles.length} NewsData articles`);
+    } catch (error) {
+      console.error('   ❌ NewsData fetch failed:', error.message);
+      
+      // If both APIs failed, exit with error
+      if (newsAPIFailed) {
+        console.error('');
+        console.error('❌ CRITICAL: Both NewsAPI and NewsDataAPI failed');
+        console.error('   Please check API keys and rate limits');
+        process.exit(1);
+      }
+    }
+
+    // If we have no articles from either API, fail
+    if (newsAPIArticles.length === 0 && newsDataArticles.length === 0) {
+      console.error('');
+      console.error('❌ No articles fetched from any source');
+      console.error('   NewsAPI: Failed or rate limited');
+      console.error('   NewsData: Failed or returned 0 articles');
+      process.exit(1);
+    }
+
+    // Log fallback status
+    if (usedFallback) {
+      console.log('');
+      console.log('⚠️  FALLBACK MODE ACTIVE');
+      console.log(`   Using only NewsDataAPI (${newsDataArticles.length} articles)`);
+      console.log('   NewsAPI will be available again after rate limit resets');
+      console.log('');
+    }
 
     // Deduplicate by source_url (primary) and title (secondary)
     const seenUrls = new Set();
@@ -327,6 +397,16 @@ async function main() {
     await storeArticles(merged);
     
     console.log('\n✅ Finished fetching & storing articles');
+    
+    // Log summary
+    console.log('');
+    console.log('📊 Fetch Summary:');
+    console.log(`   NewsAPI: ${newsAPIArticles.length} articles${newsAPIFailed ? ' (FAILED)' : ''}`);
+    console.log(`   NewsData: ${newsDataArticles.length} articles`);
+    console.log(`   Total unique: ${merged.length} articles`);
+    if (usedFallback) {
+      console.log('   ⚠️  Fallback mode was used due to NewsAPI rate limit');
+    }
     
   } catch (err) {
     console.error('❌ Script failed:', err);

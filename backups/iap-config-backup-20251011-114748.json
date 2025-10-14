@@ -1,0 +1,19 @@
+{
+  "timestamp": "2025-01-11T11:47:48Z",
+  "productIds": {
+    "monthly": "com.cybersimply.adfree.monthly.2025",
+    "lifetime": "com.cybersimply.adfree.lifetime.2025"
+  },
+  "sourceFiles": [
+    "src/services/iapService.ts",
+    "src/screens/AdFreeScreen.tsx",
+    "storekit-config.json"
+  ],
+  "verificationStatus": "✅ VERIFIED - All product IDs match expected format",
+  "expectedIds": {
+    "monthly": "com.cybersimply.adfree.monthly.2025",
+    "lifetime": "com.cybersimply.adfree.lifetime.2025"
+  },
+  "matches": true,
+  "notes": "Product IDs are correctly configured and match App Store Connect requirements"
+}

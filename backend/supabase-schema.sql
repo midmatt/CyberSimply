@@ -1,5 +1,5 @@
 -- =============================================
--- CyberSafe News Supabase Database Schema
+-- CyberSimply Supabase Database Schema
 -- =============================================
 
 -- Enable necessary extensions
@@ -17,6 +17,10 @@ CREATE TABLE IF NOT EXISTS user_profiles (
   display_name TEXT,
   avatar_url TEXT,
   is_premium BOOLEAN DEFAULT FALSE,
+  ad_free BOOLEAN DEFAULT FALSE, -- TRUE only after verified purchase
+  product_type TEXT, -- 'lifetime' or 'subscription'
+  purchase_date TIMESTAMP WITH TIME ZONE,
+  last_purchase_date TIMESTAMP WITH TIME ZONE,
   premium_expires_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -336,8 +340,14 @@ CREATE TRIGGER update_notification_tokens_updated_at
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.user_profiles (id, email, display_name)
-  VALUES (NEW.id, NEW.email, COALESCE(NEW.raw_user_meta_data->>'display_name', NEW.email));
+  INSERT INTO public.user_profiles (id, email, display_name, is_premium, ad_free)
+  VALUES (
+    NEW.id, 
+    NEW.email, 
+    COALESCE(NEW.raw_user_meta_data->>'display_name', NEW.email),
+    FALSE,  -- Ensure new users start with is_premium = FALSE
+    FALSE   -- Ensure new users start with ad_free = FALSE
+  );
   
   INSERT INTO public.user_preferences (user_id)
   VALUES (NEW.id);

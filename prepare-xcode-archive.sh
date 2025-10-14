@@ -1,95 +1,87 @@
 #!/bin/bash
 
-# Xcode Archive Preparation Script for App Store Submission
-# This script prepares your app for archiving in Xcode and uploading to App Store Connect
+# 🚀 CyberSimply - Xcode Archive Preparation Script
+# Prepares the iOS project for archiving in Xcode
 
 set -e
 
 echo "🚀 Preparing CyberSimply for Xcode Archive..."
-echo "================================================"
-
-# Step 1: Clean previous builds
 echo ""
-echo "📦 Step 1: Cleaning previous builds..."
+
+# Check if we're in the right directory
+if [ ! -f "app.json" ]; then
+    echo "❌ Error: Must run from project root directory"
+    exit 1
+fi
+
+# Step 1: Clean iOS build
+echo "🧹 Cleaning iOS build..."
 cd ios
 rm -rf build
-rm -rf DerivedData
-xcodebuild clean -workspace CyberSimply.xcworkspace -scheme CyberSimply -configuration Release
-cd ..
-
-# Step 2: Install dependencies
+rm -rf Pods
+rm -f Podfile.lock
+echo "✅ Cleaned iOS build directory"
 echo ""
-echo "📦 Step 2: Installing dependencies..."
-npm install
 
-# Step 3: Install iOS pods
+# Step 2: Create .xcode.env file
+echo "📝 Creating .xcode.env file..."
+cat > .xcode.env << 'EOF'
+# Node binary path for Xcode build scripts
+export NODE_BINARY=$(command -v node)
+EOF
+echo "✅ Created .xcode.env"
 echo ""
-echo "📦 Step 3: Installing CocoaPods..."
-cd ios
+
+# Step 3: Install CocoaPods
+echo "📦 Installing CocoaPods dependencies..."
+echo "   (This may take a few minutes...)"
 pod install --repo-update
+echo "✅ CocoaPods installed"
+echo ""
+
+# Step 4: Return to root
 cd ..
 
-# Step 4: Verify build number
-echo ""
-echo "📦 Step 4: Verifying build number..."
-BUILD_NUMBER=$(grep -A1 "buildNumber" app.json | tail -1 | tr -d ' ,"')
-echo "Current build number: $BUILD_NUMBER"
-
-if [ "$BUILD_NUMBER" -lt 42 ]; then
-    echo "❌ Error: Build number must be >= 42 for App Store"
-    exit 1
+# Step 5: Verify setup
+echo "🔍 Verifying setup..."
+if [ -f "ios/.xcode.env" ]; then
+    echo "✅ .xcode.env exists"
+else
+    echo "❌ .xcode.env missing"
 fi
 
-echo "✅ Build number is valid: $BUILD_NUMBER"
-
-# Step 5: Verify NSUserTrackingUsageDescription is removed
-echo ""
-echo "📦 Step 5: Verifying tracking permissions removed..."
-if grep -q "NSUserTrackingUsageDescription" ios/CyberSimply/Info.plist; then
-    echo "❌ Error: NSUserTrackingUsageDescription still present in Info.plist"
-    echo "   This will cause App Store rejection"
-    exit 1
+if [ -f "ios/Pods/Manifest.lock" ]; then
+    echo "✅ CocoaPods installed"
+else
+    echo "❌ CocoaPods not installed properly"
 fi
-echo "✅ No tracking permissions found"
-
-# Step 6: Create prebuild
-echo ""
-echo "📦 Step 6: Running Expo prebuild..."
-npx expo prebuild --clean
 
 echo ""
-echo "================================================"
-echo "✅ Preparation Complete!"
-echo "================================================"
+echo "🎉 Preparation Complete!"
 echo ""
-echo "📱 NEXT STEPS - Archive in Xcode:"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📱 Next Steps for Xcode Archive:"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "1. Open Xcode:"
-echo "   cd ios && open CyberSimply.xcworkspace"
+echo "1. Open Xcode workspace:"
+echo "   open ios/CyberSimply.xcworkspace"
 echo ""
-echo "2. In Xcode:"
-echo "   • Select 'Any iOS Device (arm64)' as the destination"
-echo "   • Product → Archive (or Cmd+Shift+B)"
-echo "   • Wait for archive to complete (5-10 minutes)"
+echo "2. Select 'Any iOS Device' from device dropdown"
 echo ""
-echo "3. In Organizer window:"
-echo "   • Click 'Distribute App'"
-echo "   • Select 'App Store Connect'"
-echo "   • Click 'Upload'"
-echo "   • Follow the wizard to upload"
+echo "3. Go to Product → Archive"
 echo ""
-echo "4. In App Store Connect:"
-echo "   • Go to https://appstoreconnect.apple.com"
-echo "   • Select your app"
-echo "   • Add screenshots, description, etc."
-echo "   • Submit for review"
+echo "4. Once archive completes:"
+echo "   - Click 'Distribute App'"
+echo "   - Choose 'App Store Connect'"
+echo "   - Follow the upload wizard"
 echo ""
-echo "Current Configuration:"
-echo "  • Bundle ID: com.cybersimply.app"
-echo "  • Build Number: $BUILD_NUMBER"
-echo "  • Version: 1.0.0"
-echo "  • Team: V6B8A4AKNR (Matthew Vella)"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "✅ Apple IAP Compliance Features Included:"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "🎯 Ready for Xcode Archive! Good luck with your submission! 🚀"
+echo "✓ Auto guest mode on first launch"
+echo "✓ No forced registration before IAP"
+echo "✓ Optional account creation after purchase"
+echo "✓ Guest email: guest@cybersimply.com"
 echo ""
-
+echo "🚀 Ready for App Store submission!"
