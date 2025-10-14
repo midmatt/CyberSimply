@@ -12,6 +12,7 @@ import {
   Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { useSupabase } from '../context/SupabaseContext';
@@ -21,7 +22,8 @@ type AuthMode = 'signin' | 'signup' | 'forgot';
 
 export function AuthScreen() {
   const { colors } = useTheme();
-  const { signIn, signUp, resetPassword, enterGuestMode, authState } = useSupabase();
+  const { signIn, signUp, resetPassword, authState } = useSupabase();
+  const navigation = useNavigation();
   
   const [mode, setMode] = useState<AuthMode>('signin');
   const [email, setEmail] = useState('');
@@ -56,9 +58,19 @@ export function AuthScreen() {
     }
   };
 
+  const validateEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
   const handleSignIn = async () => {
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    if (!validateEmail(email)) {
+      Alert.alert('Error', 'Please enter a valid email address (e.g., user@example.com)');
       return;
     }
 
@@ -76,6 +88,11 @@ export function AuthScreen() {
   const handleSignUp = async () => {
     if (!email || !password || !displayName) {
       Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    if (!validateEmail(email)) {
+      Alert.alert('Error', 'Please enter a valid email address (e.g., user@example.com)');
       return;
     }
 
@@ -107,6 +124,11 @@ export function AuthScreen() {
       return;
     }
 
+    if (!validateEmail(email)) {
+      Alert.alert('Error', 'Please enter a valid email address (e.g., user@example.com)');
+      return;
+    }
+
     setIsLoading(true);
     const result = await resetPassword(email);
     setIsLoading(false);
@@ -119,18 +141,6 @@ export function AuthScreen() {
     }
   };
 
-  const handleGuestMode = async () => {
-    setIsLoading(true);
-    const result = await enterGuestMode();
-    setIsLoading(false);
-
-    if (result.success) {
-      // Guest mode entered successfully, no need to show alert
-      // The app will automatically navigate to the main screen
-    } else {
-      Alert.alert('Error', result.error || 'Failed to enter guest mode');
-    }
-  };
 
   const styles = StyleSheet.create({
     container: {
@@ -144,6 +154,13 @@ export function AuthScreen() {
       flex: 1,
       padding: SPACING.lg,
       justifyContent: 'center',
+    },
+    backButton: {
+      position: 'absolute',
+      top: SPACING.md,
+      left: SPACING.md,
+      padding: SPACING.sm,
+      zIndex: 10,
     },
     header: {
       alignItems: 'center',
@@ -297,14 +314,22 @@ export function AuthScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+        {/* Back Button - Apple IAP compliance: optional auth */}
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+
         <View style={styles.header}>
           <Text style={styles.title}>
             {mode === 'signin' ? 'Welcome Back' : 
              mode === 'signup' ? 'Create Account' : 'Reset Password'}
           </Text>
           <Text style={styles.subtitle}>
-            {mode === 'signin' ? 'Sign in to your account' :
-             mode === 'signup' ? 'Create a new account to get started' :
+            {mode === 'signin' ? 'Sign in to sync your data across devices (optional)' :
+             mode === 'signup' ? 'Create an account to sync your purchases and favorites (optional)' :
              'Enter your email to reset your password'}
           </Text>
         </View>
@@ -352,6 +377,11 @@ export function AuthScreen() {
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
                   autoCorrect={false}
+                  textContentType="newPassword"
+                  autoComplete="new-password"
+                  importantForAutofill="no"
+                  passwordRules="minlength: 8; required: lower; required: upper; required: digit;"
+                  keyboardType="default"
                 />
                 <TouchableOpacity
                   style={styles.passwordToggle}
@@ -379,6 +409,11 @@ export function AuthScreen() {
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
                 autoCorrect={false}
+                textContentType="newPassword"
+                autoComplete="new-password"
+                importantForAutofill="no"
+                passwordRules="minlength: 8; required: lower; required: upper; required: digit;"
+                keyboardType="default"
               />
             </View>
           )}
@@ -433,17 +468,6 @@ export function AuthScreen() {
               </Text>
             </TouchableOpacity>
           )}
-
-          {/* Guest Mode Button */}
-          <TouchableOpacity
-            style={[styles.button, styles.guestButton]}
-            onPress={handleGuestMode}
-            disabled={isLoading}
-          >
-            <Text style={[styles.buttonText, styles.guestButtonText]}>
-              Continue as Guest
-            </Text>
-          </TouchableOpacity>
         </View>
 
         <View style={styles.linkContainer}>

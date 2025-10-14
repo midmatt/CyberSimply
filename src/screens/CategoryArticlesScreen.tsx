@@ -11,7 +11,6 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { NewsCard } from '../components/NewsCard';
 import { SearchBar } from '../components/SearchBar';
-import { PinnedBannerAd } from '../components/PinnedBannerAd';
 import { useNews } from '../context/NewsContext';
 import { useTheme } from '../context/ThemeContext';
 import { ProcessedArticle } from '../services/newsService';
@@ -286,7 +285,6 @@ export function CategoryArticlesScreen() {
       />
       
       {/* Pinned Banner Ad at bottom */}
-      <PinnedBannerAd />
     </SafeAreaView>
   );
 }

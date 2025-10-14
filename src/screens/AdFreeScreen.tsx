@@ -10,13 +10,14 @@ import {
   KeyboardAvoidingView,
   Platform,
   StatusBar,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useSupabase } from '../context/SupabaseContext';
 import { useNavigation } from '@react-navigation/native';
-import { storeKitIAPService, AdFreeProduct, PRODUCT_IDS } from '../services/storeKitIAPService';
+import { iapService, IAPProduct, PRODUCT_IDS } from '../services/iapService';
 import { useAdFree } from '../context/AdFreeContext';
 import { TYPOGRAPHY, SPACING } from '../constants';
 
@@ -28,31 +29,68 @@ export function AdFreeScreen() {
   
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [products, setProducts] = useState<AdFreeProduct[]>([]);
+  const [products, setProducts] = useState<IAPProduct[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
-  const [adFreeStatus, setAdFreeStatus] = useState<{ productType?: 'lifetime' | 'subscription'; expiresAt?: string } | null>(null);
+  const [adFreeStatus, setAdFreeStatus] = useState<{ productType?: 'subscription'; expiresAt?: string } | null>(null);
 
   useEffect(() => {
+    // Initialize for all users (guests and authenticated)
     initializeIAP();
   }, [authState.user]);
 
   const initializeIAP = async () => {
     try {
       // Initialize StoreKit IAP service
-      const initResult = await storeKitIAPService.initialize();
+      const initResult = await iapService.initialize();
+      // CRITICAL FIX: Always load products, even if IAP initialization fails
+      // This ensures purchase buttons are always visible
+      const loadedProducts = iapService.getProducts();
+      setProducts(loadedProducts);
+      
+      // If no products loaded, use fallback products
+      if (loadedProducts.length === 0) {
+        console.log('🔄 [AdFreeScreen] No products loaded, using fallback products');
+        const fallbackProducts = [
+          {
+            productId: 'com.cybersimply.adfree.monthly.2025',
+            price: '2.99',
+            currency: 'USD',
+            title: 'Ad-Free Monthly',
+            description: 'Remove all ads with a monthly subscription.',
+            localizedPrice: '$2.99/month',
+            type: 'subscription' as const,
+          },
+        ];
+        setProducts(fallbackProducts);
+      }
+      
       if (initResult.success) {
-        // Load products
-        const loadedProducts = storeKitIAPService.getProducts();
-        setProducts(loadedProducts);
-        
         // Check ad-free status and get product type
-        const status = await storeKitIAPService.checkAdFreeStatus();
+        const status = await iapService.checkAdFreeStatus();
         setAdFreeStatus(status);
         
         // Refresh ad-free status from context
         await refreshAdFreeStatus();
       } else {
         console.error('StoreKit IAP initialization failed:', initResult.error);
+        
+        // Show helpful error message to user (but don't prevent UI from showing)
+        if (initResult.error?.includes('sandbox tester account')) {
+          Alert.alert(
+            'IAP Setup Required',
+            'Please sign in with a sandbox tester account in Settings → App Store → Sandbox Account to enable in-app purchases. Buttons will still appear for testing.',
+            [{ text: 'OK' }]
+          );
+        }
+        
+        // Still try to get ad-free status even if IAP failed
+        try {
+          const status = await iapService.checkAdFreeStatus();
+          setAdFreeStatus(status);
+          await refreshAdFreeStatus();
+        } catch (statusError) {
+          console.log('Could not check ad-free status due to IAP failure');
+        }
       }
     } catch (error) {
       console.error('Error initializing StoreKit IAP:', error);
@@ -63,13 +101,18 @@ export function AdFreeScreen() {
 
   // Ad-free status is now managed by the AdFreeContext
 
-  const handlePurchase = async (productId: string) => {
-    if (!authState.isAuthenticated) {
-      Alert.alert('Sign In Required', 'Please sign in to purchase ad-free access.');
-      return;
+  const handleOpenLink = async (url: string) => {
+    try {
+      await Linking.openURL(url);
+    } catch (error) {
+      console.error('Error opening link:', error);
+      Alert.alert('Error', 'Could not open link. Please try again.');
     }
+  };
 
-    const product = storeKitIAPService.getProduct(productId);
+  const handlePurchase = async (productId: string) => {
+    const products = iapService.getProducts();
+    const product = products.find(p => p.productId === productId);
     if (!product) {
       Alert.alert('Error', 'Product not found.');
       return;
@@ -79,12 +122,21 @@ export function AdFreeScreen() {
     if (isAdFree) {
       Alert.alert(
         'Already Ad-Free',
-        'You already have ad-free access! Use "Restore Purchases" if you need to restore your purchase.',
+        'You already have ad-free access!',
         [{ text: 'OK' }]
       );
       return;
     }
 
+    // Proceed directly with purchase (Apple IAP compliance: no forced registration)
+    proceedWithPurchase(productId);
+  };
+
+  const proceedWithPurchase = (productId: string) => {
+    const products = iapService.getProducts();
+    const product = products.find(p => p.productId === productId);
+    if (!product) return;
+    
     Alert.alert(
       'Go Ad-Free',
       `${product.description}\n\nPrice: ${product.localizedPrice}`,
@@ -103,23 +155,48 @@ export function AdFreeScreen() {
     setSelectedProduct(productId);
     
     try {
-      const result = await storeKitIAPService.purchaseProduct(productId);
+      const result = await iapService.purchaseProduct(productId);
       
       if (result.success) {
-        Alert.alert(
-          'Success!',
-          'Thank you for your purchase! You now have ad-free access to CyberSimply.',
-          [{ text: 'OK', onPress: async () => {
-            // Refresh ad-free status from context
-            await refreshAdFreeStatus();
-            setSelectedProduct(null);
-          }}]
-        );
+        // Show optional account creation prompt for guest users (Apple compliant)
+        if (authState.isGuest) {
+          Alert.alert(
+            'Purchase Successful!',
+            'Thank you for your purchase! You now have ad-free access.\n\nWant to sync your purchase across devices? Create an account to restore your subscription on other devices (optional).',
+            [
+              { 
+                text: 'Maybe Later', 
+                style: 'cancel',
+                onPress: async () => {
+                  await refreshAdFreeStatus();
+                  setSelectedProduct(null);
+                }
+              },
+              { 
+                text: 'Create Account', 
+                onPress: async () => {
+                  await refreshAdFreeStatus();
+                  setSelectedProduct(null);
+                  navigation.navigate('Auth' as never);
+                }
+              }
+            ]
+          );
+        } else {
+          // For authenticated users, just show success
+          Alert.alert(
+            'Success!',
+            'Thank you for your purchase! You now have ad-free access to CyberSimply.',
+            [{ text: 'OK', onPress: async () => {
+              await refreshAdFreeStatus();
+              setSelectedProduct(null);
+            }}]
+          );
+        }
       } else {
         // Handle specific error cases
         if (result.error?.includes('already have ad-free access') || 
-            result.error?.includes('already has an active subscription') ||
-            result.error?.includes('lifetime ad-free access')) {
+            result.error?.includes('already has an active subscription')) {
           Alert.alert(
             'Already Ad-Free',
             result.error,
@@ -140,63 +217,6 @@ export function AdFreeScreen() {
     }
   };
 
-  const handleRestorePurchases = async () => {
-    // Double confirmation for lifetime restore
-    Alert.alert(
-      'Restore Purchases',
-      'Are you sure you want to restore your previous purchases? This will check for any lifetime ad-free purchases linked to your Apple ID.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Restore',
-          onPress: () => {
-            // Second confirmation
-            Alert.alert(
-              'Confirm Restore',
-              'This action will restore any previous lifetime purchases. Continue?',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Yes, Restore',
-                  onPress: () => processRestore(),
-                  style: 'default'
-                }
-              ]
-            );
-          }
-        }
-      ]
-    );
-  };
-
-  const processRestore = async () => {
-    setIsProcessing(true);
-    try {
-      const result = await storeKitIAPService.restorePurchases();
-      
-      if (result.success) {
-        if (result.restoredPurchases && result.restoredPurchases.length > 0) {
-          Alert.alert(
-            'Purchases Restored',
-            `Successfully restored ${result.restoredPurchases.length} purchase(s).`,
-            [{ text: 'OK', onPress: async () => {
-              await refreshAdFreeStatus();
-              const status = await storeKitIAPService.checkAdFreeStatus();
-              setAdFreeStatus(status);
-            }}]
-          );
-        } else {
-          Alert.alert('No Purchases Found', 'No previous purchases were found to restore.');
-        }
-      } else {
-        Alert.alert('Restore Failed', result.error || 'Failed to restore purchases. Please try again.');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'An unexpected error occurred while restoring purchases.');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
 
   const handleCancelSubscription = () => {
     Alert.alert(
@@ -416,6 +436,67 @@ export function AdFreeScreen() {
       textAlign: 'center',
       lineHeight: 18,
     },
+    guestMessageContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: SPACING.xl,
+      paddingVertical: SPACING.xl * 2,
+    },
+    guestTitle: {
+      ...TYPOGRAPHY.h2,
+      textAlign: 'center',
+      marginTop: SPACING.lg,
+      marginBottom: SPACING.md,
+      fontWeight: '600',
+    },
+    guestMessage: {
+      ...TYPOGRAPHY.body,
+      textAlign: 'center',
+      lineHeight: 22,
+      marginBottom: SPACING.xl,
+    },
+    createAccountButton: {
+      paddingHorizontal: SPACING.xl,
+      paddingVertical: SPACING.md,
+      borderRadius: 12,
+      minWidth: 200,
+    },
+    createAccountButtonText: {
+      ...TYPOGRAPHY.button,
+      textAlign: 'center',
+      fontWeight: '600',
+    },
+    legalLinksContainer: {
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      padding: SPACING.md,
+      marginBottom: SPACING.lg,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    legalLinksIntro: {
+      ...TYPOGRAPHY.caption,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      marginBottom: SPACING.xs,
+    },
+    legalLinksRow: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    legalLink: {
+      ...TYPOGRAPHY.caption,
+      color: colors.accent,
+      textDecorationLine: 'underline',
+      fontWeight: '600',
+    },
+    legalSeparator: {
+      ...TYPOGRAPHY.caption,
+      color: colors.textSecondary,
+      marginHorizontal: SPACING.xs,
+    },
   });
 
   if (isLoading) {
@@ -445,6 +526,7 @@ export function AdFreeScreen() {
       </SafeAreaView>
     );
   }
+
 
   return (
     <SafeAreaView style={styles.container}>
@@ -524,6 +606,26 @@ export function AdFreeScreen() {
 
       {!isAdFree && (
         <>
+          {/* Policy Links */}
+          <View style={styles.legalLinksContainer}>
+            <Text style={styles.legalLinksIntro}>
+              By subscribing, you agree to our:
+            </Text>
+            <View style={styles.legalLinksRow}>
+              <TouchableOpacity 
+                onPress={() => handleOpenLink('https://cybersimply.notion.site/CyberSimply-Terms-of-Use-EULA-28c47fbd7cc2808ca354c8425c321a34')}
+              >
+                <Text style={styles.legalLink}>Terms of Use</Text>
+              </TouchableOpacity>
+              <Text style={styles.legalSeparator}> • </Text>
+              <TouchableOpacity 
+                onPress={() => handleOpenLink('https://cybersimply.notion.site/CyberSimply-Privacy-Policy-27847fbd7cc280988b72d8c00f3af9d7')}
+              >
+                <Text style={styles.legalLink}>Privacy Policy</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
           <View style={styles.benefitsContainer}>
             <Text style={styles.benefitsTitle}>Ad-Free Benefits</Text>
             
@@ -542,10 +644,6 @@ export function AdFreeScreen() {
               <Text style={styles.benefitText}>Support app development</Text>
             </View>
             
-            <View style={styles.benefitItem}>
-              <Ionicons name="checkmark" size={20} color="#34C759" style={styles.benefitIcon} />
-              <Text style={styles.benefitText}>Lifetime access - no recurring fees</Text>
-            </View>
           </View>
 
           {products.map((product) => (
@@ -572,25 +670,16 @@ export function AdFreeScreen() {
                   </View>
                 ) : (
                   <Text style={styles.buttonText}>
-                    {product.type === 'lifetime' ? 'Buy Lifetime' : 'Subscribe Monthly'}
+                    Subscribe
                   </Text>
                 )}
               </TouchableOpacity>
             </View>
           ))}
 
-          {/* Restore Purchases Button */}
-          <TouchableOpacity
-            style={[styles.button, styles.secondaryButton]}
-            onPress={handleRestorePurchases}
-            disabled={isProcessing}
-          >
-            <Text style={[styles.buttonText, styles.secondaryButtonText]}>
-              Restore Purchases
-            </Text>
-          </TouchableOpacity>
         </>
       )}
+
 
       {/* Show cancel subscription button for active monthly subscribers */}
       {isAdFree && adFreeStatus && adFreeStatus.productType === 'subscription' && (
@@ -614,7 +703,7 @@ export function AdFreeScreen() {
         <Text style={styles.footerText}>
           {isAdFree 
             ? 'Thank you for your support! Your ad-free access is active.'
-            : 'Secure payment processing by Apple. Your payment information is handled securely by Apple.'
+            : 'Secure payment processing by Apple. No account required to purchase. Create an account later to sync across devices.'
           }
         </Text>
         </View>

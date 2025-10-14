@@ -1,26 +1,68 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Linking,
   ScrollView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { COLORS, TYPOGRAPHY, SPACING } from '../constants';
-import { AD_CONFIG } from '../constants/adConfig';
+import { iapService } from '../services/iapService';
 
 export function DonationScreen() {
   const { colors } = useTheme();
   const navigation = useNavigation();
 
+  const [isLoading, setIsLoading] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [tipProducts, setTipProducts] = useState<any[]>([]);
+
+  useEffect(() => {
+    initializeTips();
+  }, []);
+
   const handleBackPress = () => {
     navigation.goBack();
+  };
+
+  const initializeTips = async () => {
+    try {
+      await iapService.initialize();
+      const products = iapService.getProducts();
+      // Filter for tip products
+      const tips = products.filter(p => p.productId.includes('tip'));
+      setTipProducts(tips);
+    } catch (error) {
+      console.error('Error loading tips:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleTipPurchase = async (productId: string) => {
+    setIsProcessing(true);
+    try {
+      const result = await iapService.purchaseProduct(productId);
+      if (result.success) {
+        Alert.alert(
+          'Thank You! ☕',
+          'Your support means the world to us! Thank you for helping keep CyberSimply running.',
+          [{ text: 'You\'re Welcome!' }]
+        );
+      } else {
+        Alert.alert('Error', result.error || 'Could not complete purchase');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'An error occurred during purchase');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const styles = StyleSheet.create({
@@ -100,6 +142,9 @@ export function DonationScreen() {
       color: colors.cardBackground,
       marginLeft: SPACING.sm,
     },
+    buttonDisabled: {
+      opacity: 0.6,
+    },
     secondaryButton: {
       backgroundColor: 'transparent',
       borderWidth: 2,
@@ -166,20 +211,6 @@ export function DonationScreen() {
     },
   });
 
-  const handleBuyMeACoffee = async () => {
-    try {
-      const url = AD_CONFIG.DONATIONS.BUY_ME_A_COFFEE_URL;
-      const supported = await Linking.canOpenURL(url);
-      
-      if (supported) {
-        await Linking.openURL(url);
-      } else {
-        Alert.alert('Error', 'Could not open Buy Me a Coffee page');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to open donation page');
-    }
-  };
 
 
 
@@ -230,17 +261,46 @@ export function DonationScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Support Us</Text>
           
-          <View style={styles.donationCard}>
-            <Text style={styles.donationTitle}>☕ Buy Me a Coffee</Text>
-            <Text style={styles.donationDescription}>
-              Support us with a small donation and get a virtual coffee! 
-              Perfect for one-time support or regular contributions.
-            </Text>
-            <TouchableOpacity style={styles.button} onPress={handleBuyMeACoffee}>
-              <Ionicons name="cafe" size={24} color={colors.cardBackground} />
-              <Text style={styles.buttonText}>Buy Me a Coffee</Text>
-            </TouchableOpacity>
-          </View>
+          {isLoading ? (
+            <View style={styles.donationCard}>
+              <ActivityIndicator size="large" color={colors.accent} />
+              <Text style={[styles.donationDescription, { textAlign: 'center', marginTop: SPACING.md }]}>
+                Loading tip options...
+              </Text>
+            </View>
+          ) : (
+            <>
+              {tipProducts.map((tip) => (
+                <View key={tip.productId} style={styles.donationCard}>
+                  <Text style={styles.donationTitle}>
+                    {tip.title || 'Support CyberSimply'}
+                  </Text>
+                  <Text style={styles.donationDescription}>
+                    {tip.description || 'Show your support with a tip'}
+                  </Text>
+                  <TouchableOpacity 
+                    style={[styles.button, isProcessing && styles.buttonDisabled]} 
+                    onPress={() => handleTipPurchase(tip.productId)}
+                    disabled={isProcessing}
+                  >
+                    <Ionicons name="cafe" size={24} color={colors.cardBackground} />
+                    <Text style={styles.buttonText}>
+                      {isProcessing ? 'Processing...' : `${tip.localizedPrice || tip.price}`}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+
+              {tipProducts.length === 0 && !isLoading && (
+                <View style={styles.donationCard}>
+                  <Text style={styles.donationTitle}>☕ Tips Coming Soon!</Text>
+                  <Text style={styles.donationDescription}>
+                    Tip options are being set up. Thank you for your interest in supporting CyberSimply!
+                  </Text>
+                </View>
+              )}
+            </>
+          )}
         </View>
 
         <View style={styles.section}>

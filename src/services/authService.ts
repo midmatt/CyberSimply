@@ -91,15 +91,15 @@ export class AuthService {
         console.log('🔐 AuthService: User found, loading profile...');
         await this.loadUserProfile(session.user.id);
       } else {
-        console.log('🔐 AuthService: No user session or stay logged in disabled, checking for guest mode...');
-        // Check if user wants to continue as guest
+        console.log('🔐 AuthService: No user session or stay logged in disabled, auto-entering guest mode...');
+        // Automatically enter guest mode (Apple IAP compliance: no forced registration)
         const guestId = await this.getGuestId();
         if (guestId) {
-          console.log('🔐 AuthService: Guest ID found, entering guest mode...');
+          console.log('🔐 AuthService: Existing guest ID found, entering guest mode...');
           this.setGuestMode(guestId);
         } else {
-          console.log('🔐 AuthService: No guest ID, showing auth screen...');
-          this.updateAuthState({ user: null, isLoading: false, isAuthenticated: false, isGuest: false });
+          console.log('🔐 AuthService: No guest ID found, creating new guest user...');
+          await this.enterGuestMode();
         }
       }
 
@@ -110,12 +110,13 @@ export class AuthService {
         if (session?.user) {
           await this.loadUserProfile(session.user.id);
         } else {
-          // Check if user wants to continue as guest
+          // Automatically enter guest mode (Apple IAP compliance)
           const guestId = await this.getGuestId();
           if (guestId) {
             this.setGuestMode(guestId);
           } else {
-            this.updateAuthState({ user: null, isLoading: false, isAuthenticated: false, isGuest: false });
+            console.log('🔐 AuthService: Auth change with no session, entering guest mode...');
+            await this.enterGuestMode();
           }
         }
       });
@@ -124,20 +125,27 @@ export class AuthService {
       console.error('❌ Auth initialization error:', error);
       if (error instanceof Error && error.message === 'Auth initialization timeout') {
         console.log('⏰ Auth initialization timed out, falling back to guest mode...');
-        // Try to enter guest mode as fallback
+        // Automatically enter guest mode as fallback
         try {
           const guestId = await this.getGuestId();
           if (guestId) {
             this.setGuestMode(guestId);
           } else {
-            this.updateAuthState({ user: null, isLoading: false, isAuthenticated: false, isGuest: false });
+            await this.enterGuestMode();
           }
         } catch (guestError) {
-          console.error('❌ Guest mode fallback failed:', guestError);
-          this.updateAuthState({ user: null, isLoading: false, isAuthenticated: false, isGuest: false });
+          console.error('❌ Guest mode fallback failed, forcing guest mode anyway:', guestError);
+          // Force guest mode even if saving fails
+          const fallbackGuestId = `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          this.setGuestMode(fallbackGuestId);
         }
       } else {
-        this.updateAuthState({ user: null, isLoading: false, isAuthenticated: false, isGuest: false });
+        // For any other error, still enter guest mode to allow app usage
+        console.log('❌ Unknown error during auth init, entering guest mode to allow app usage...');
+        await this.enterGuestMode().catch(() => {
+          const fallbackGuestId = `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          this.setGuestMode(fallbackGuestId);
+        });
       }
     }
   }
@@ -287,7 +295,7 @@ export class AuthService {
   private setGuestMode(guestId: string) {
     const guestUser: AuthUser = {
       id: guestId,
-      email: 'guest@cybersafenews.com',
+      email: 'guest@cybersimply.com',
       displayName: 'Guest User',
       isPremium: false,
       isGuest: true,
@@ -392,10 +400,11 @@ export class AuthService {
   public async signOut(): Promise<{ success: boolean; error?: string }> {
     try {
       if (this.authState.isGuest) {
-        // For guest users, just clear the state
+        // For guest users, just clear the state and create a new guest session
         await this.clearGuestId();
         await this.clearAllUserData();
-        this.updateAuthState({ user: null, isLoading: false, isAuthenticated: false, isGuest: false });
+        // Auto-enter new guest mode (Apple IAP compliance: no forced auth screen)
+        await this.enterGuestMode();
         return { success: true };
       }
 
@@ -408,7 +417,8 @@ export class AuthService {
 
       // Clear all user-specific data to prevent cross-user contamination
       await this.clearAllUserData();
-      this.updateAuthState({ user: null, isLoading: false, isAuthenticated: false, isGuest: false });
+      // Auto-enter guest mode after sign out (Apple IAP compliance)
+      await this.enterGuestMode();
       return { success: true };
     } catch (error) {
       console.error('Sign out error:', error);
@@ -474,7 +484,7 @@ export class AuthService {
   public async resetPassword(email: string): Promise<{ success: boolean; error?: string }> {
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'cybersafenews://reset-password',
+        redirectTo: 'cybersimply://reset-password',
       });
 
       if (error) {

@@ -188,8 +188,8 @@ export const createHeavyStartupSteps = (): StartupStep[] => [
     timeout: 5000,
     execute: async () => {
       // IAP service initialization (non-blocking)
-      const { storeKitIAPService } = await import('../../services/storeKitIAPService');
-      const result = await storeKitIAPService.initialize();
+      const { iapService } = await import('../../services/iapService');
+      const result = await iapService.initialize();
       if (!result.success) {
         console.warn('⚠️ [Startup] IAP service initialization failed:', result.error);
       }

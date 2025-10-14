@@ -60,6 +60,13 @@
         "serviceAccountKeyPath": "./google-service-account.json",
         "track": "internal"
       }
+    },
+    "testflight": {
+      "ios": {
+        "appleId": "your-apple-id@example.com",
+        "ascAppId": "your-app-store-connect-app-id",
+        "appleTeamId": "your-team-id"
+      }
     }
   }
 }

@@ -489,7 +489,7 @@ export function EnhancedNewsListScreen() {
       />
 
       {/* Ad Banner */}
-      <AdBanner size="medium" showCloseButton={true} />
+      <AdBanner size="medium" showCloseButton={false} />
     </SafeAreaView>
   );
 }

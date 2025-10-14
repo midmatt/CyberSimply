@@ -13,11 +13,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { useSupabase } from '../context/SupabaseContext';
 import { notificationService, NotificationSettings } from '../services/notificationService';
 import { TYPOGRAPHY, SPACING } from '../constants';
 
 export function NotificationSettingsScreen() {
   const { colors } = useTheme();
+  const { authState } = useSupabase();
   const navigation = useNavigation();
   
   const [settings, setSettings] = useState<NotificationSettings>({
@@ -274,6 +276,34 @@ export function NotificationSettingsScreen() {
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.accent} />
           <Text style={styles.loadingText}>Loading settings...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Guest users cannot access notification settings
+  if (authState.isGuest) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton} 
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Notifications</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        <View style={styles.loadingContainer}>
+          <Ionicons name="notifications-off-outline" size={60} color={colors.textSecondary} />
+          <Text style={[styles.loadingText, { textAlign: 'center', marginTop: SPACING.lg }]}>
+            Create an account to enable notifications
+          </Text>
+          <Text style={[styles.loadingText, { textAlign: 'center', marginTop: SPACING.sm, fontSize: 14 }]}>
+            Guest accounts have limited features
+          </Text>
         </View>
       </SafeAreaView>
     );

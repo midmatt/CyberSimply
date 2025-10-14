@@ -83,7 +83,11 @@ export class SupabaseAnalyticsService {
         });
 
       if (error) {
-        console.error('Error tracking analytics event:', error);
+        // Don't log analytics errors to console to avoid spam
+        // Only log if it's not a table not found error
+        if (!error.message?.includes('usage_analytics') && !error.message?.includes('schema cache')) {
+          console.error('Error tracking analytics event:', error);
+        }
         return { success: false, error: error.message };
       }
 

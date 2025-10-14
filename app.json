@@ -11,7 +11,7 @@
     "scheme": "cybersimply",
     "ios": {
       "supportsTablet": true,
-      "buildNumber": "46",
+      "buildNumber": "62",
       "config": {
         "googleMobileAdsAppId": "ca-app-pub-1846982089045102~4493578427"
       },
@@ -23,6 +23,9 @@
         "BGTaskSchedulerPermittedIdentifiers": [
           "com.cybersimply.app.background-refresh",
           "com.cybersimply.app.news-processing"
+        ],
+        "LSApplicationQueriesSchemes": [
+          "mailto"
         ],
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
@@ -36,11 +39,7 @@
       "bundleIdentifier": "com.cybersimply.app",
       "associatedDomains": [
         "applinks:cybersimply.com"
-      ],
-      "entitlements": {
-        "com.apple.developer.in-app-payments": true,
-        "com.apple.developer.applesignin": true
-      }
+      ]
     },
     "android": {
       "icon": "./assets/icons/ios-light.png",
@@ -50,7 +49,7 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "versionCode": 29,
+      "versionCode": 53,
       "config": {
         "googleMobileAdsAppId": "ca-app-pub-1846982089045102~4493578427"
       },

@@ -407,6 +407,20 @@ export function ProfileScreen() {
       color: colors.textSecondary,
       lineHeight: TYPOGRAPHY.caption.lineHeight * 1.2,
     },
+    guestInfoContainer: {
+      backgroundColor: colors.surface,
+      padding: SPACING.md,
+      borderRadius: 8,
+      borderLeftWidth: 4,
+      borderLeftColor: colors.accent,
+      marginTop: SPACING.sm,
+    },
+    guestInfoText: {
+      ...TYPOGRAPHY.caption,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      lineHeight: 18,
+    },
   });
 
   if (!authState.user) {
@@ -492,12 +506,23 @@ export function ProfileScreen() {
               </TouchableOpacity>
             </>
           ) : (
-            <TouchableOpacity
-              style={[styles.button, styles.secondaryButton]}
-              onPress={() => setIsEditing(true)}
-            >
-              <Text style={[styles.buttonText, styles.secondaryButtonText]}>Edit Profile</Text>
-            </TouchableOpacity>
+            <>
+              {!authState.isGuest && (
+                <TouchableOpacity
+                  style={[styles.button, styles.secondaryButton]}
+                  onPress={() => setIsEditing(true)}
+                >
+                  <Text style={[styles.buttonText, styles.secondaryButtonText]}>Edit Profile</Text>
+                </TouchableOpacity>
+              )}
+              {authState.isGuest && (
+                <View style={styles.guestInfoContainer}>
+                  <Text style={styles.guestInfoText}>
+                    Create an account to edit your profile and access more features.
+                  </Text>
+                </View>
+              )}
+            </>
           )}
         </View>
 
@@ -532,13 +557,15 @@ export function ProfileScreen() {
             <Text style={[styles.buttonText, styles.dangerButtonText]}>Sign Out</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.button, styles.dangerButton, { backgroundColor: '#FF3B30', borderColor: '#FF3B30' }]}
-            onPress={handleDeleteAccount}
-            disabled={isLoading}
-          >
-            <Text style={[styles.buttonText, styles.dangerButtonText]}>Delete My Account</Text>
-          </TouchableOpacity>
+          {!authState.isGuest && (
+            <TouchableOpacity
+              style={[styles.button, styles.dangerButton, { backgroundColor: '#FF3B30', borderColor: '#FF3B30' }]}
+              onPress={handleDeleteAccount}
+              disabled={isLoading}
+            >
+              <Text style={[styles.buttonText, styles.dangerButtonText]}>Delete My Account</Text>
+            </TouchableOpacity>
+          )}
         </View>
         </ScrollView>
       </KeyboardAvoidingView>

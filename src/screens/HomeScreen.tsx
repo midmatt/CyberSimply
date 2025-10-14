@@ -241,7 +241,7 @@ export function HomeScreen() {
         />
 
         {/* Ad Banner */}
-        <AdBanner size="banner" showCloseButton={true} />
+        <AdBanner size="banner" showCloseButton={false} />
         {/* Debug info */}
         {__DEV__ && (
           <View style={{ padding: 10, backgroundColor: '#f0f0f0', margin: 10 }}>

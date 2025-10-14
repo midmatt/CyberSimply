@@ -309,8 +309,6 @@ export function ArchiveScreen() {
           </View>
         )}
       />
-      {/* Ad Banner - Outside FlatList to prevent re-mounting */}
-      <AdBanner size="medium" showCloseButton={true} />
     </SafeAreaView>
   );
 }

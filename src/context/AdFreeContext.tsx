@@ -1,12 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useSupabase } from './SupabaseContext';
 import { supabase } from '../services/supabaseClientProduction';
-import { storeKitIAPService } from '../services/storeKitIAPService';
+import { iapService } from '../services/iapService';
 import { localStorageService } from '../services/localStorageService';
 
 interface AdFreeStatus {
   isAdFree: boolean;
-  productType?: 'lifetime' | 'subscription';
+  productType?: 'subscription';
   expiresAt?: string;
   lastChecked?: string;
 }
@@ -43,20 +43,31 @@ export function AdFreeProvider({ children }: AdFreeProviderProps) {
 
   // Load ad-free status when user changes
   useEffect(() => {
-    if (supabaseContext?.authState?.isAuthenticated && supabaseContext?.authState?.user) {
-      // Check ad-free status from Supabase (account-based)
+    const isGuest = supabaseContext?.authState?.isGuest;
+    const isAuthenticated = supabaseContext?.authState?.isAuthenticated;
+    
+    if (isAuthenticated || isGuest) {
+      // Check ad-free status for both authenticated and guest users
+      if (!isGuest && supabaseContext?.authState?.user) {
+        // For authenticated users, clear local cache to force Supabase check
+        localStorageService.clearAdFreeStatus();
+      }
+      // Check ad-free status (handles both guest and authenticated)
       checkAdFreeStatus();
     } else {
+      // Only clear if truly no user session (not guest, not authenticated)
       setAdFreeStatus(null);
       setError(null);
-      // Only clear local cache when user logs out (not the Supabase data)
       localStorageService.clearAdFreeStatus();
     }
-  }, [supabaseContext?.authState?.isAuthenticated, supabaseContext?.authState?.user]);
+  }, [supabaseContext?.authState?.isAuthenticated, supabaseContext?.authState?.isGuest, supabaseContext?.authState?.user]);
 
   const checkAdFreeStatus = async () => {
-    if (!supabaseContext?.authState?.isAuthenticated || !supabaseContext?.authState?.user) {
-      console.log('🔍 [AdFree] User not authenticated, clearing ad-free status');
+    // Apple IAP compliance: Support guest users with local storage
+    const isGuest = supabaseContext?.authState?.isGuest;
+    
+    if (!supabaseContext?.authState?.isAuthenticated && !isGuest) {
+      console.log('🔍 [AdFree] No user session, clearing ad-free status');
       setAdFreeStatus(null);
       await localStorageService.clearAdFreeStatus();
       return;
@@ -66,26 +77,37 @@ export function AdFreeProvider({ children }: AdFreeProviderProps) {
     setError(null);
 
     try {
-      console.log('🔍 [AdFree] Checking ad-free status for user:', supabaseContext?.authState?.user?.id);
+      console.log('🔍 [AdFree] Checking ad-free status for user:', {
+        userId: supabaseContext?.authState?.user?.id,
+        isGuest: isGuest
+      });
       
-      // First check local storage for immediate UI response
-      const localStatus = await localStorageService.getAdFreeStatus();
-      if (localStatus && localStorageService.isAdFreeStatusValid(localStatus.storedAt)) {
-        console.log('🔍 [AdFree] Using cached ad-free status:', localStatus);
-        setAdFreeStatus({
-          isAdFree: localStatus.isAdFree,
-          productType: localStatus.productType,
-          expiresAt: localStatus.expiresAt,
-          lastChecked: localStatus.lastChecked,
-        });
+      // For guest users, check local storage first
+      if (isGuest) {
+        console.log('🔍 [AdFree] Guest user - checking local storage...');
+        const localStatus = await localStorageService.getAdFreeStatus();
         
-        // Still check Supabase in background for updates
-        checkSupabaseStatus();
-        return;
+        if (localStatus?.isAdFree) {
+          console.log('✅ [AdFree] Guest has local ad-free status:', localStatus);
+          setAdFreeStatus({
+            isAdFree: true,
+            productType: localStatus.productType as 'subscription',
+            expiresAt: localStatus.expiresAt,
+            lastChecked: new Date().toISOString(),
+          });
+        } else {
+          console.log('❌ [AdFree] No local ad-free status for guest');
+          setAdFreeStatus({
+            isAdFree: false,
+            lastChecked: new Date().toISOString(),
+          });
+        }
+      } else {
+        // For authenticated users, check Supabase
+        console.log('🔍 [AdFree] Authenticated user - clearing cache and checking Supabase...');
+        await localStorageService.clearAdFreeStatus();
+        await checkSupabaseStatus();
       }
-
-      // If no valid local cache, check Supabase directly
-      await checkSupabaseStatus();
 
     } catch (error) {
       console.error('❌ [AdFree] Error checking ad-free status:', error);
@@ -117,64 +139,82 @@ export function AdFreeProvider({ children }: AdFreeProviderProps) {
         return;
       }
       
-      // Check Supabase directly (only if verified purchase)
-      // Use optional fields in case columns don't exist yet
-      const { data: profile, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('id', supabaseContext.authState.user.id)
-        .single();
-
-      if (profileError) {
-        console.warn('⚠️ [AdFree] Error fetching user profile:', profileError);
-        // Don't throw - just log warning and assume not ad-free
-        console.log('🔍 [AdFree] Assuming user is not ad-free due to profile error');
-        
-        const status: AdFreeStatus = {
-          isAdFree: false,
-          lastChecked: new Date().toISOString(),
-        };
-        setAdFreeStatus(status);
-        await localStorageService.setAdFreeStatus(status);
-        return;
-      }
-
-      // Safely access ad_free with fallback to is_premium (backwards compatibility)
-      const isAdFree = profile?.ad_free ?? profile?.is_premium ?? false;
+      const userId = supabaseContext.authState.user.id;
       
-      console.log('🔍 [AdFree] Supabase profile data:', {
-        ad_free: profile?.ad_free,
-        is_premium: profile?.is_premium,
-        premium_expires_at: profile?.premium_expires_at,
-        product_type: profile?.product_type,
-        userId: supabaseContext?.authState?.user?.id,
-        computed_isAdFree: isAdFree
-      });
+      // STEP 1: Check user_iap table for active purchases (source of truth)
+      console.log('🔍 [AdFree] Step 1: Checking user_iap for active purchases...');
+      const { data: activePurchases, error: iapError } = await supabase
+        .from('user_iap')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .or('expires_date.is.null,expires_date.gt.' + new Date().toISOString())
+        .order('purchase_date', { ascending: false })
+        .limit(1);
 
-      if (isAdFree) {
-        // User has verified ad-free access (only set after confirmed purchase)
+      if (!iapError && activePurchases && activePurchases.length > 0) {
+        const purchase = activePurchases[0];
+        const isSubscription = purchase.expires_date !== null;
+        
+        console.log('✅ [AdFree] Active purchase found in user_iap:', {
+          productId: purchase.product_id,
+          type: isSubscription ? 'subscription' : 'lifetime',
+          expiresAt: purchase.expires_date,
+        });
+        
         const status: AdFreeStatus = {
           isAdFree: true,
-          productType: (profile?.product_type as 'lifetime' | 'subscription') || 'lifetime',
-          expiresAt: profile?.premium_expires_at,
+          productType: 'subscription',
+          expiresAt: purchase.expires_date,
           lastChecked: new Date().toISOString(),
         };
         
         setAdFreeStatus(status);
-        
-        // Store in local storage for future quick access
         await localStorageService.setAdFreeStatus(status);
         await localStorageService.setLastSync();
         
-        console.log('✅ [AdFree] User has verified ad-free access (Supabase) - stored locally');
+        console.log('✅ [AdFree] Ad-free status confirmed from user_iap table');
         return;
       }
 
-      // If not ad-free in Supabase, check StoreKit IAP service
-      console.log('🔍 [AdFree] No verified purchase in Supabase, checking StoreKit...');
-      const iapResult = await storeKitIAPService.checkAdFreeStatus();
+      // STEP 2: Check user_profiles.ad_free for legacy purchases (DISABLED FOR TESTING)
+      console.log('🔍 [AdFree] Step 2: Skipping legacy check - forcing purchase flow for testing');
+      
+      // TEMPORARY: Skip legacy check to force all users through purchase flow
+      // Uncomment this section once you have real purchases
+      /*
+      const { data: profile, error: profileError } = await supabase
+        .from('user_profiles')
+        .select('ad_free, is_premium, premium_expires_at, product_type')
+        .eq('id', userId)
+        .single();
+
+      if (!profileError && profile?.ad_free === true) {
+        console.log('✅ [AdFree] Legacy ad-free status found in user_profiles');
+        
+        const status: AdFreeStatus = {
+          isAdFree: true,
+          productType: (profile.product_type as 'lifetime' | 'subscription') || 'lifetime',
+          expiresAt: profile.premium_expires_at,
+          lastChecked: new Date().toISOString(),
+        };
+        
+        setAdFreeStatus(status);
+        await localStorageService.setAdFreeStatus(status);
+        await localStorageService.setLastSync();
+        
+        console.log('✅ [AdFree] Legacy ad-free status confirmed');
+        return;
+      }
+      */
+
+      // STEP 3: Check StoreKit for unreported purchases
+      console.log('🔍 [AdFree] Step 3: Checking StoreKit for unreported purchases...');
+      const iapResult = await iapService.checkAdFreeStatus();
       
       if (iapResult.isAdFree) {
+        console.log('✅ [AdFree] Unreported purchase found in StoreKit');
+        
         const status: AdFreeStatus = {
           isAdFree: true,
           productType: iapResult.productType,
@@ -183,27 +223,24 @@ export function AdFreeProvider({ children }: AdFreeProviderProps) {
         };
         
         setAdFreeStatus(status);
-        
-        // Store in local storage
         await localStorageService.setAdFreeStatus(status);
         await localStorageService.setLastSync();
         
-        console.log('✅ [AdFree] User has ad-free access (StoreKit) - stored locally');
-      } else {
-        // No ad-free access - NEVER set to true by default
-        const status: AdFreeStatus = {
-          isAdFree: false,
-          lastChecked: new Date().toISOString(),
-        };
-        
-        setAdFreeStatus(status);
-        
-        // Store in local storage
-        await localStorageService.setAdFreeStatus(status);
-        await localStorageService.setLastSync();
-        
-        console.log('❌ [AdFree] User does not have ad-free access - stored locally');
+        console.log('✅ [AdFree] StoreKit purchase confirmed and will sync to Supabase');
+        return;
       }
+
+      // STEP 4: No ad-free access found anywhere
+      console.log('❌ [AdFree] No ad-free access found');
+      const status: AdFreeStatus = {
+        isAdFree: false,
+        lastChecked: new Date().toISOString(),
+      };
+      
+      setAdFreeStatus(status);
+      await localStorageService.setAdFreeStatus(status);
+      await localStorageService.setLastSync();
+      
     } catch (error) {
       console.error('❌ [AdFree] Error checking Supabase status:', error);
       throw error;

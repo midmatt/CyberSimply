@@ -16,7 +16,6 @@ import { useNews } from '../context/NewsContext';
 import { useSupabase } from '../context/SupabaseContext';
 import { ArticleCategory } from '../types';
 import { AdBanner } from '../components/AdBanner';
-import { PinnedBannerAd } from '../components/PinnedBannerAd';
 
 // Use the unified category type
 type NewsCategory = 'cybersecurity' | 'hacking' | 'general' | 'all';
@@ -291,7 +290,7 @@ export function CategoriesScreen() {
         {categories.map(renderCategoryCard)}
         
         {/* Ad Banner after categories */}
-        <AdBanner size="medium" showCloseButton={true} />
+        <AdBanner size="medium" showCloseButton={false} />
         
         <View style={styles.infoSection}>
           <Ionicons name="information-circle" size={24} color={colors.info} />
@@ -302,7 +301,6 @@ export function CategoriesScreen() {
       </ScrollView>
       
       {/* Pinned Banner Ad at bottom */}
-      <PinnedBannerAd />
     </SafeAreaView>
   );
 }

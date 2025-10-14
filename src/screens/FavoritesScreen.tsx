@@ -20,10 +20,10 @@ import { ProcessedArticle } from '../services/newsService';
 import { RootStackParamList } from '../types';
 import { COLORS, TYPOGRAPHY, SPACING } from '../constants';
 
-type NavigationProp = StackNavigationProp<RootStackParamList>;
+type NavigationProp = StackNavigationProp<RootStackParamList, keyof RootStackParamList>;
 
 export function FavoritesScreen() {
-  const navigation = useNavigation<NavigationProp>();
+  const navigation = useNavigation();
   const { colors } = useTheme();
   const { state, favorites, toggleFavorite } = useNews();
   const { authState } = useSupabase();
@@ -157,7 +157,7 @@ export function FavoritesScreen() {
         </View>
         
         {/* Ad Banner in header */}
-        <AdBanner size="small" showCloseButton={true} />
+        <AdBanner size="small" showCloseButton={false} />
       </View>
 
       <FlatList

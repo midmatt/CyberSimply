@@ -442,7 +442,7 @@ export function ArticleDetail() {
         )}
 
         {/* Ad Banner after content */}
-        <AdBanner size="medium" showCloseButton={true} />
+        <AdBanner size="medium" showCloseButton={false} />
       </ScrollView>
     </SafeAreaView>
   );

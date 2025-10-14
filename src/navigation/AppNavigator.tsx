@@ -16,6 +16,7 @@ import { AuthScreen } from '../screens/AuthScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { AdFreeScreen } from '../screens/AdFreeScreen';
 import { NotificationSettingsScreen } from '../screens/NotificationSettingsScreen';
+import { FeedbackScreen } from '../screens/FeedbackScreen';
 import { ArticleDetail } from '../components/ArticleDetail';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useTheme } from '../context/ThemeContext';
@@ -229,6 +230,7 @@ export default function AppNavigator() {
     DonationScreen,
     AdFreeScreen,
     NotificationSettingsScreen,
+    FeedbackScreen,
     ProfileScreen,
     ArticleDetail
   };
@@ -280,56 +282,71 @@ export default function AppNavigator() {
           screenOptions={{
             headerShown: false,
           }}
+          initialRouteName="Main"
         >
-          {!authState.isAuthenticated && !authState.isGuest ? (
-            <Stack.Screen name="Auth" component={AuthScreen} />
-          ) : (
-            <>
-              <Stack.Screen name="Main" component={MainTabNavigator} />
-              <Stack.Screen 
-                name="CategoryArticles" 
-                component={CategoryArticlesScreen}
-                options={{
-                  headerShown: false,
-                }}
-              />
-              <Stack.Screen 
-                name="Support" 
-                component={DonationScreen}
-                options={{
-                  headerShown: false,
-                }}
-              />
-              <Stack.Screen 
-                name="AdFree" 
-                component={AdFreeScreen}
-                options={{
-                  headerShown: false,
-                }}
-              />
-              <Stack.Screen 
-                name="NotificationSettings" 
-                component={NotificationSettingsScreen}
-                options={{
-                  headerShown: false,
-                }}
-              />
-              <Stack.Screen 
-                name="Profile" 
-                component={ProfileScreen}
-                options={{
-                  headerShown: false,
-                }}
-              />
-              <Stack.Screen 
-                name="ArticleDetail" 
-                component={ArticleDetail}
-                options={{
-                  headerShown: false,
-                }}
-              />
-            </>
-          )}
+          {/* Main app - always accessible (Apple IAP compliance: no forced auth) */}
+          <Stack.Screen name="Main" component={MainTabNavigator} />
+          
+          {/* Auth screen - optional, accessible from Settings */}
+          <Stack.Screen 
+            name="Auth" 
+            component={AuthScreen}
+            options={{
+              headerShown: false,
+              presentation: 'modal',
+            }}
+          />
+          
+          {/* Other screens */}
+          <Stack.Screen 
+            name="CategoryArticles" 
+            component={CategoryArticlesScreen}
+            options={{
+              headerShown: false,
+            }}
+          />
+          <Stack.Screen 
+            name="Support" 
+            component={DonationScreen}
+            options={{
+              headerShown: false,
+            }}
+          />
+          <Stack.Screen 
+            name="AdFree" 
+            component={AdFreeScreen}
+            options={{
+              headerShown: false,
+            }}
+          />
+          <Stack.Screen 
+            name="NotificationSettings" 
+            component={NotificationSettingsScreen}
+            options={{
+              headerShown: false,
+            }}
+          />
+          <Stack.Screen 
+            name="Feedback" 
+            component={FeedbackScreen}
+            options={{
+              headerShown: false,
+            }}
+          />
+          <Stack.Screen 
+            name="Profile" 
+            component={ProfileScreen}
+            options={{
+              headerShown: false,
+            }}
+          />
+          <Stack.Screen 
+            name="ArticleDetail" 
+            component={ArticleDetail}
+            options={{
+              headerShown: false,
+            }}
+          />
         </Stack.Navigator>
       </NavigationContainer>
     </ErrorBoundary>

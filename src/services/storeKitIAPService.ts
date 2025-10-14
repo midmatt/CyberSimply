@@ -36,7 +36,6 @@ try {
 
 // Product IDs
 export const PRODUCT_IDS = {
-  LIFETIME: 'com.cybersimply.adfree.lifetime.2025',
   MONTHLY: 'com.cybersimply.adfree.monthly.2025',
 } as const;
 
@@ -47,7 +46,7 @@ export interface AdFreeProduct {
   title: string;
   description: string;
   localizedPrice: string;
-  type: 'lifetime' | 'subscription';
+  type: 'subscription';
 }
 
 export interface PurchaseResult {
@@ -58,7 +57,7 @@ export interface PurchaseResult {
 
 export interface AdFreeStatus {
   isAdFree: boolean;
-  productType?: 'lifetime' | 'subscription';
+  productType?: 'subscription';
   expiresAt?: string;
 }
 
@@ -213,7 +212,7 @@ export class StoreKitIAPService {
    */
   private async fetchProducts(): Promise<void> {
     try {
-      const productIds = [PRODUCT_IDS.LIFETIME, PRODUCT_IDS.MONTHLY];
+      const productIds = [PRODUCT_IDS.MONTHLY];
       const products = await RNIAP.getProducts({ skus: productIds });
       
       console.log('🛒 StoreKit IAP: Fetched products:', products);
@@ -225,7 +224,7 @@ export class StoreKitIAPService {
         title: product.title,
         description: product.description,
         localizedPrice: product.price,
-        type: product.productId === PRODUCT_IDS.LIFETIME ? 'lifetime' : 'subscription',
+        type: 'subscription',
       }));
 
       console.log(`✅ StoreKit IAP: Found ${this.products.length} products`);
@@ -241,15 +240,6 @@ export class StoreKitIAPService {
    */
   private getFallbackProducts(): AdFreeProduct[] {
     return [
-      {
-        productId: PRODUCT_IDS.LIFETIME,
-        price: '12.99',
-        currency: 'USD',
-        title: 'Ad-Free Lifetime',
-        description: 'Remove all ads forever and support the development of CyberSimply.',
-        localizedPrice: '$12.99',
-        type: 'lifetime',
-      },
       {
         productId: PRODUCT_IDS.MONTHLY,
         price: '2.99',
@@ -296,30 +286,12 @@ export class StoreKitIAPService {
       console.log(`🛒 StoreKit IAP: Checking if user already owns ${productId}...`);
       const currentStatus = await this.checkAdFreeStatus();
       
-      // For lifetime purchases, check if user already has ad-free access
-      if (product.type === 'lifetime' && currentStatus.isAdFree) {
-        console.log('❌ StoreKit IAP: User already has ad-free access, preventing duplicate purchase');
-        return { 
-          success: false, 
-          error: 'You already have ad-free access. Use "Restore Purchases" if you need to restore your purchase.' 
-        };
-      }
-
       // For monthly subscriptions, check if user already has an active subscription
-      if (product.type === 'subscription' && currentStatus.isAdFree && currentStatus.productType === 'subscription') {
+      if (currentStatus.isAdFree) {
         console.log('❌ StoreKit IAP: User already has an active subscription, preventing duplicate purchase');
         return { 
           success: false, 
-          error: 'You already have an active ad-free subscription. Use "Restore Purchases" if you need to restore your subscription.' 
-        };
-      }
-
-      // If user has lifetime access, don't allow monthly subscription
-      if (product.type === 'subscription' && currentStatus.isAdFree && currentStatus.productType === 'lifetime') {
-        console.log('❌ StoreKit IAP: User has lifetime access, monthly subscription not needed');
-        return { 
-          success: false, 
-          error: 'You already have lifetime ad-free access. No subscription needed.' 
+          error: 'You already have an active ad-free subscription.' 
         };
       }
 
@@ -327,13 +299,8 @@ export class StoreKitIAPService {
 
       let purchase: any;
 
-      if (product.type === 'subscription') {
-        // Handle subscription purchase
-        purchase = await RNIAP.requestSubscription({ sku: productId });
-      } else {
-        // Handle one-time purchase
-        purchase = await RNIAP.requestPurchase({ sku: productId });
-      }
+      // Handle subscription purchase
+      purchase = await RNIAP.requestSubscription({ sku: productId });
 
       console.log('✅ StoreKit IAP: Purchase successful:', purchase);
       return { success: true, purchase };
@@ -382,7 +349,6 @@ export class StoreKitIAPService {
 
       // Filter for our ad-free products
       const adFreePurchases = purchases.filter(purchase => 
-        purchase.productId === PRODUCT_IDS.LIFETIME || 
         purchase.productId === PRODUCT_IDS.MONTHLY
       );
 
@@ -437,7 +403,6 @@ export class StoreKitIAPService {
       console.log('🛒 [StoreKit] Found local purchases:', purchases?.length || 0);
 
       const adFreePurchase = purchases?.find(purchase => 
-        purchase.productId === PRODUCT_IDS.LIFETIME || 
         purchase.productId === PRODUCT_IDS.MONTHLY
       );
 
@@ -446,7 +411,7 @@ export class StoreKitIAPService {
         await this.updateAdFreeStatus(adFreePurchase);
         return {
           isAdFree: true,
-          productType: adFreePurchase.productId === PRODUCT_IDS.LIFETIME ? 'lifetime' : 'subscription',
+          productType: 'subscription',
         };
       }
 
@@ -474,12 +439,10 @@ export class StoreKitIAPService {
 
       console.log('🛒 [StoreKit] Updating profile for user:', user.id);
 
-      const isLifetime = purchase.productId === PRODUCT_IDS.LIFETIME;
-      const expiresAt = isLifetime ? null : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days for subscription
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days for subscription
 
       console.log('🛒 [StoreKit] Purchase details:', {
         productId: purchase.productId,
-        isLifetime,
         expiresAt,
         transactionId: purchase.transactionId,
         userId: user.id
@@ -490,7 +453,7 @@ export class StoreKitIAPService {
         is_premium: true,
         premium_expires_at: expiresAt,
         ad_free: true, // Set ad_free to true for any purchase
-        product_type: isLifetime ? 'lifetime' : 'subscription',
+        product_type: 'subscription',
         purchase_date: new Date().toISOString(),
         last_purchase_date: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -515,8 +478,8 @@ export class StoreKitIAPService {
       // Also update local storage immediately to prevent flicker
       const adFreeStatus = {
         isAdFree: true,
-        productType: (isLifetime ? 'lifetime' : 'subscription') as 'lifetime' | 'subscription',
-        expiresAt: expiresAt || undefined,
+        productType: 'subscription' as 'subscription',
+        expiresAt: expiresAt,
         lastChecked: new Date().toISOString(),
       };
 
@@ -573,40 +536,13 @@ export class StoreKitIAPService {
         console.log('✅ [StoreKit] User has verified ad-free access');
         return {
           isAdFree: true,
-          productType: 'lifetime', // ad_free is always lifetime
-        };
-      }
-
-      // Check is_premium as fallback (legacy)
-      if (!profile.is_premium) {
-        console.log('❌ [StoreKit] User does not have premium access');
-        return { isAdFree: false };
-      }
-
-      // Check if subscription has expired
-      if (profile.premium_expires_at) {
-        const expiresAt = new Date(profile.premium_expires_at);
-        const now = new Date();
-        
-        if (expiresAt <= now) {
-          console.log('❌ [StoreKit] Premium subscription has expired');
-          return { isAdFree: false };
-        }
-
-        console.log('✅ [StoreKit] User has active premium subscription');
-        return {
-          isAdFree: true,
           productType: 'subscription',
-          expiresAt: profile.premium_expires_at,
         };
       }
 
-      // Lifetime purchase (legacy)
-      console.log('✅ [StoreKit] User has lifetime premium access');
-      return {
-        isAdFree: true,
-        productType: 'lifetime',
-      };
+      // STRICT: No fallback to is_premium - only ad_free column matters
+      console.log('❌ [StoreKit] User does not have verified ad-free access');
+      return { isAdFree: false };
 
     } catch (error) {
       console.error('❌ [StoreKit] Error getting Supabase ad-free status:', error);
