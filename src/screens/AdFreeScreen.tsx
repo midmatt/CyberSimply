@@ -226,6 +226,41 @@ export function AdFreeScreen() {
     );
   };
 
+  const handleRestorePurchases = async () => {
+    setIsProcessing(true);
+    try {
+      const result = await iapService.restorePurchases();
+      
+      if (result.success) {
+        if (result.restoredCount > 0) {
+          Alert.alert(
+            'Purchases Restored',
+            `Successfully restored ${result.restoredCount} purchase(s). Your ad-free access has been restored.`,
+            [{ text: 'OK', onPress: async () => {
+              await refreshAdFreeStatus();
+            }}]
+          );
+        } else {
+          Alert.alert(
+            'No Purchases Found',
+            'No previous purchases were found to restore. If you believe this is an error, please contact support.',
+            [{ text: 'OK' }]
+          );
+        }
+      } else {
+        Alert.alert(
+          'Restore Failed',
+          result.error || 'Failed to restore purchases. Please try again.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      Alert.alert('Error', 'An unexpected error occurred while restoring purchases.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const styles = StyleSheet.create({
     container: {
       flex: 1,
@@ -497,6 +532,24 @@ export function AdFreeScreen() {
       color: colors.textSecondary,
       marginHorizontal: SPACING.xs,
     },
+    restoreButton: {
+      backgroundColor: 'transparent',
+      borderColor: colors.accent,
+      borderWidth: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    restoreButtonText: {
+      color: colors.accent,
+    },
+    restoreHintText: {
+      ...TYPOGRAPHY.caption,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      marginTop: SPACING.sm,
+      fontSize: 12,
+    },
   });
 
   if (isLoading) {
@@ -698,6 +751,29 @@ export function AdFreeScreen() {
           </Text>
         </View>
       )}
+
+      {/* Restore Purchases Button - Apple requirement */}
+      <View style={{ marginTop: SPACING.lg }}>
+        <TouchableOpacity
+          style={[styles.button, styles.restoreButton]}
+          onPress={handleRestorePurchases}
+          disabled={isProcessing}
+        >
+          {isProcessing ? (
+            <ActivityIndicator size="small" color={colors.accent} />
+          ) : (
+            <>
+              <Ionicons name="refresh" size={20} color={colors.accent} style={{ marginRight: 8 }} />
+              <Text style={[styles.buttonText, styles.restoreButtonText]}>
+                Restore Purchases
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+        <Text style={styles.restoreHintText}>
+          Already purchased? Tap here to restore your ad-free access.
+        </Text>
+      </View>
 
       <View style={styles.footer}>
         <Text style={styles.footerText}>
