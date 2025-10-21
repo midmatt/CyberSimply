@@ -7,6 +7,7 @@ import {
   Alert,
   Linking,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
@@ -16,6 +17,7 @@ import { TYPOGRAPHY, SPACING } from '../constants';
 import { adService, AdBannerData } from '../services/adService';
 import { AD_CONFIG } from '../constants/adConfig';
 import { AdMobBannerComponent } from './AdMobBanner';
+import { WebAdBanner } from './WebAdBanner';
 
 interface AdBannerProps {
   position?: 'top' | 'bottom' | 'inline';
@@ -49,6 +51,18 @@ export function AdBanner({
   if (!shouldShowAds) {
     console.log('🚫 [AdBanner] Completely hidden - user has ad-free access');
     return null;
+  }
+
+  // Use WebAdBanner for web platform
+  if (Platform.OS === 'web') {
+    return (
+      <WebAdBanner
+        position={position}
+        size={size}
+        onAdPress={onAdPress}
+        showCloseButton={showCloseButton}
+      />
+    );
   }
 
   // Retry function for failed ad loads

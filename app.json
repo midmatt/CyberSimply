@@ -67,7 +67,16 @@
       ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "name": "CyberSimply - Cybersecurity News",
+      "shortName": "CyberSimply",
+      "description": "Stay informed with the latest cybersecurity news, threats, and protection tips",
+      "themeColor": "#FF6B35",
+      "backgroundColor": "#FFFFFF",
+      "startUrl": "/",
+      "display": "standalone",
+      "orientation": "portrait-primary",
+      "bundler": "metro"
     },
     "notification": {
       "icon": "./assets/icons/ios-light.png",

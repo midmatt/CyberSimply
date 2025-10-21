@@ -3,8 +3,9 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
-import { View, Text, ActivityIndicator } from 'react-native';
+import { View, Text, ActivityIndicator, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ResponsiveLayout } from '../layouts/ResponsiveLayout';
 import { NewsListScreen } from '../screens/NewsListScreen';
 import { CategoriesScreen } from '../screens/CategoriesScreen';
 import { CategoryArticlesScreen } from '../screens/CategoryArticlesScreen';
@@ -77,6 +78,7 @@ function getSafeAuthState(authState: any) {
 
 function MainTabNavigator() {
   const themeContext = useSafeTheme();
+  const [currentRoute, setCurrentRoute] = useState('News');
   
   // Show loading screen while theme initializes
   if (!themeContext || !themeContext.colors || !themeContext.colors.background) {
@@ -96,6 +98,28 @@ function MainTabNavigator() {
     hasTextPrimary: !!colors.textPrimary
   });
 
+  // For web desktop, use ResponsiveLayout with tab content
+  if (Platform.OS === 'web') {
+    return (
+      <ResponsiveLayout currentRoute={currentRoute} onNavigate={setCurrentRoute}>
+        <Tab.Navigator
+          initialRouteName="News"
+          screenOptions={{
+            headerShown: false,
+            tabBarStyle: { display: 'none' }, // Hide tab bar on web
+          }}
+        >
+          <Tab.Screen name="Favorites" component={FavoritesScreen} />
+          <Tab.Screen name="Categories" component={CategoriesScreen} />
+          <Tab.Screen name="News" component={NewsListScreen} />
+          <Tab.Screen name="Archive" component={ArchiveScreen} />
+          <Tab.Screen name="Settings" component={SettingsScreen} />
+        </Tab.Navigator>
+      </ResponsiveLayout>
+    );
+  }
+
+  // For mobile platforms, use traditional tab navigator
   return (
     <Tab.Navigator
       initialRouteName="News"
