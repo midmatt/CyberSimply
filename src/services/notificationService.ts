@@ -88,11 +88,9 @@ export class NotificationService {
         });
       }
 
-      const token = await Notifications.getExpoPushTokenAsync({
-        projectId: '8NG2865546', // Your sandbox key
-      });
+      const token = await Notifications.getExpoPushTokenAsync();
 
-      return token.data;
+      return token;
     } catch (error) {
       console.error('Error getting push token:', error);
       return null;
@@ -112,7 +110,6 @@ export class NotificationService {
       
       // Create trigger for daily notification
       const trigger: Notifications.DailyTriggerInput = {
-        type: Notifications.SchedulableTriggerInputTypes.DAILY,
         hour: hours,
         minute: minutes,
       };

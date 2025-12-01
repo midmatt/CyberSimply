@@ -24,7 +24,7 @@ import { smartSearchService, SearchQuery } from '../services/smartSearchService'
 import { RootStackParamList } from '../types';
 import { COLORS, TYPOGRAPHY, SPACING } from '../constants';
 
-type NavigationProp = StackNavigationProp<RootStackParamList>;
+type NavigationProp = StackNavigationProp<RootStackParamList, keyof RootStackParamList>;
 
 export function EnhancedNewsListScreen() {
   const navigation = useNavigation<NavigationProp>();

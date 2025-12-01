@@ -167,6 +167,62 @@ export class AdService {
   }
 
   /**
+   * Get interstitial ad data (for display purposes)
+   */
+  public async getInterstitialAd(): Promise<AdBannerData> {
+    try {
+      console.log('Ad Service: Getting interstitial ad data...');
+      
+      // Simulate getting ad data
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Return mock interstitial ad data
+      const mockInterstitialAds: AdBannerData[] = [
+        {
+          id: `interstitial-${Date.now()}-1`,
+          title: 'Advanced Security Training',
+          description: 'Master cybersecurity skills with our comprehensive course',
+          cta: 'Start Course',
+          category: 'cybersecurity',
+          targetUrl: 'https://example.com/advanced-security-training'
+        },
+        {
+          id: `interstitial-${Date.now()}-2`,
+          title: 'Enterprise Security Solutions',
+          description: 'Protect your business with enterprise-grade security',
+          cta: 'Learn More',
+          category: 'cybersecurity',
+          targetUrl: 'https://example.com/enterprise-security'
+        },
+        {
+          id: `interstitial-${Date.now()}-3`,
+          title: 'Security Audit Services',
+          description: 'Professional security assessment for your organization',
+          cta: 'Get Quote',
+          category: 'cybersecurity',
+          targetUrl: 'https://example.com/security-audit'
+        }
+      ];
+
+      // Randomly select an ad
+      const randomAd = mockInterstitialAds[Math.floor(Math.random() * mockInterstitialAds.length)];
+      console.log('Ad Service: Loaded interstitial ad data:', randomAd.title);
+      return randomAd;
+    } catch (error) {
+      console.error('Ad Service: Failed to get interstitial ad data', error);
+      // Return fallback ad data
+      return {
+        id: `fallback-interstitial-${Date.now()}`,
+        title: 'Cybersecurity Solutions',
+        description: 'Comprehensive security solutions for your needs',
+        cta: 'Explore Now',
+        category: 'cybersecurity',
+        targetUrl: 'https://example.com/cybersecurity-solutions'
+      };
+    }
+  }
+
+  /**
    * Show an interstitial ad
    */
   public async showInterstitialAd(): Promise<void> {

@@ -35,43 +35,37 @@ export class NewsApiService {
 
   static async fetchNewsByCategory(category: 'cybersecurity' | 'hacking' | 'general', page: number = 1): Promise<NewsApiArticle[]> {
     try {
-      console.log(`🔍 [NewsAPI] Fetching ${category} news from Supabase (page ${page})...`);
+      console.log(`🔍 [NewsAPI] Fetching ${category} news from NewsAPI (page ${page})...`);
       
-      // Test Supabase connection first
-      const connectionTest = await testSupabaseConnection();
-      if (!connectionTest.success) {
-        console.warn(`⚠️ [NewsAPI] Supabase connection failed: ${connectionTest.error}`);
-        console.log(`🔄 [NewsAPI] Using fallback articles for ${category}`);
+      // Check if we have a valid API key
+      if (!this.API_KEY || this.API_KEY === 'your_newsapi_key_here') {
+        console.warn(`⚠️ [NewsAPI] No valid API key, using fallback articles for ${category}`);
         return this.getFallbackArticles(category);
       }
       
-      // Query Supabase for articles by category using production service
-      const supabaseResult = await supabaseArticleServiceProduction.getArticles({
-        category: category,
-        limit: 10,
-        offset: (page - 1) * 10
-      });
+      const query = this.SEARCH_QUERIES[category];
+      const url = `${this.BASE_URL}?q=${encodeURIComponent(query)}&apiKey=${this.API_KEY}&page=${page}&pageSize=10&sortBy=publishedAt&language=en`;
       
-      if (supabaseResult.success && supabaseResult.data && supabaseResult.data.articles.length > 0) {
-        console.log(`✅ [NewsAPI] Found ${supabaseResult.data.articles.length} ${category} articles in Supabase`);
-        // Convert Supabase articles to NewsAPI format for compatibility
-        return supabaseResult.data.articles.map(article => ({
-          source: { id: article.source || 'unknown', name: article.source || 'Unknown' },
-          author: article.author,
-          title: article.title,
-          description: article.summary || '',
-          url: article.source_url || '',
-          urlToImage: article.image_url,
-          publishedAt: article.published_at || new Date().toISOString(),
-          content: null
-        }));
+      console.log(`🔍 [NewsAPI] Making request to: ${url.replace(this.API_KEY, '***')}`);
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`NewsAPI request failed: ${response.status} ${response.statusText}`);
       }
       
-      console.log(`⚠️ [NewsAPI] No ${category} articles found in Supabase, using fallback articles`);
-      return this.getFallbackArticles(category);
+      const data: NewsApiResponse = await response.json();
+      
+      if (data.status === 'ok' && data.articles && data.articles.length > 0) {
+        console.log(`✅ [NewsAPI] Found ${data.articles.length} ${category} articles from NewsAPI`);
+        return data.articles;
+      } else {
+        console.log(`⚠️ [NewsAPI] No ${category} articles found from NewsAPI, using fallback articles`);
+        return this.getFallbackArticles(category);
+      }
       
     } catch (error) {
-      console.error(`❌ [NewsAPI] Error fetching ${category} news from Supabase:`, error);
+      console.error(`❌ [NewsAPI] Error fetching ${category} news from NewsAPI:`, error);
       console.log(`🔄 [NewsAPI] Using fallback articles for ${category}`);
       return this.getFallbackArticles(category);
     }
@@ -79,42 +73,37 @@ export class NewsApiService {
 
   static async fetchLatestNews(page: number = 1): Promise<NewsApiArticle[]> {
     try {
-      console.log(`📰 [NewsAPI] Fetching latest news from Supabase (page ${page})...`);
+      console.log(`📰 [NewsAPI] Fetching latest news from NewsAPI (page ${page})...`);
       
-      // Test Supabase connection first
-      const connectionTest = await testSupabaseConnection();
-      if (!connectionTest.success) {
-        console.warn(`⚠️ [NewsAPI] Supabase connection failed: ${connectionTest.error}`);
-        console.log(`🔄 [NewsAPI] Using fallback articles`);
+      // Check if we have a valid API key
+      if (!this.API_KEY || this.API_KEY === 'your_newsapi_key_here') {
+        console.warn(`⚠️ [NewsAPI] No valid API key, using fallback articles`);
         return this.getFallbackArticles('cybersecurity');
       }
       
-      // Query Supabase directly for articles using production service
-      const supabaseResult = await supabaseArticleServiceProduction.getArticles({
-        limit: 20,
-        offset: (page - 1) * 10
-      });
+      const query = 'cybersecurity OR "cyber security" OR "data breach" OR "security vulnerability" OR "privacy protection"';
+      const url = `${this.BASE_URL}?q=${encodeURIComponent(query)}&apiKey=${this.API_KEY}&page=${page}&pageSize=20&sortBy=publishedAt&language=en`;
       
-      if (supabaseResult.success && supabaseResult.data && supabaseResult.data.articles.length > 0) {
-        console.log(`✅ [NewsAPI] Found ${supabaseResult.data.articles.length} articles in Supabase`);
-        // Convert Supabase articles to NewsAPI format for compatibility
-        return supabaseResult.data.articles.map(article => ({
-          source: { id: article.source || 'unknown', name: article.source || 'Unknown' },
-          author: article.author,
-          title: article.title,
-          description: article.summary || '',
-          url: article.source_url || '',
-          urlToImage: article.image_url,
-          publishedAt: article.published_at || new Date().toISOString(),
-          content: null
-        }));
+      console.log(`🔍 [NewsAPI] Making request to: ${url.replace(this.API_KEY, '***')}`);
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`NewsAPI request failed: ${response.status} ${response.statusText}`);
       }
       
-      console.log('⚠️ [NewsAPI] No articles found in Supabase, using fallback articles');
-      return this.getFallbackArticles('cybersecurity');
+      const data: NewsApiResponse = await response.json();
+      
+      if (data.status === 'ok' && data.articles && data.articles.length > 0) {
+        console.log(`✅ [NewsAPI] Found ${data.articles.length} articles from NewsAPI`);
+        return data.articles;
+      } else {
+        console.log('⚠️ [NewsAPI] No articles found from NewsAPI, using fallback articles');
+        return this.getFallbackArticles('cybersecurity');
+      }
       
     } catch (error) {
-      console.error('❌ [NewsAPI] Error fetching latest news from Supabase:', error);
+      console.error('❌ [NewsAPI] Error fetching latest news from NewsAPI:', error);
       console.log('🔄 [NewsAPI] Using fallback articles');
       return this.getFallbackArticles('cybersecurity');
     }

@@ -199,12 +199,57 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_ERROR', payload: null });
 
     try {
-      // Generate initial set of articles (12 total = 3 per category)
-      const initialArticles = await generateArticles(1, 12);
-      dispatch({ type: 'SET_ARTICLES', payload: initialArticles });
+      console.log('🔄 AppContext: Fetching real news articles...');
+      
+      // Import the real news service
+      const { NewsService } = await import('../services/api');
+      
+      // Fetch real articles from the unified news service
+      const realArticles = await NewsService.fetchNewsFromAPI(1);
+      
+      if (realArticles && realArticles.length > 0) {
+        console.log(`✅ AppContext: Successfully fetched ${realArticles.length} real articles`);
+        
+        // Convert ProcessedArticle to Article format
+        const convertedArticles: Article[] = realArticles.map((article, index) => ({
+          id: article.id || `real-${index}`,
+          title: article.title,
+          summary: article.summary || 'No summary available',
+          content: article.what || article.summary || 'No content available',
+          imageUrl: article.imageUrl,
+          sourceUrl: article.sourceUrl,
+          source: article.source,
+          publishedAt: article.publishedAt,
+          category: article.category === 'cybersecurity' ? 'Security Basics' : 
+                   article.category === 'hacking' ? 'Major Breaches' : 'Privacy Tips',
+          whyItMatters: [
+            'Stay informed about cybersecurity threats',
+            'Protect your personal information',
+            'Learn about latest security practices',
+            'Make informed decisions about online safety'
+          ],
+          isFavorite: false,
+        }));
+        
+        dispatch({ type: 'SET_ARTICLES', payload: convertedArticles });
+      } else {
+        console.log('⚠️ AppContext: No real articles available, using fallback');
+        // Fallback to generated articles if no real ones available
+        const fallbackArticles = await generateArticles(1, 12);
+        dispatch({ type: 'SET_ARTICLES', payload: fallbackArticles });
+      }
     } catch (error) {
-      console.error('Error fetching news:', error);
-      dispatch({ type: 'SET_ERROR', payload: 'Failed to fetch news. Please try again later.' });
+      console.error('❌ AppContext: Error fetching real news:', error);
+      console.log('🔄 AppContext: Falling back to generated articles');
+      
+      // Fallback to generated articles on error
+      try {
+        const fallbackArticles = await generateArticles(1, 12);
+        dispatch({ type: 'SET_ARTICLES', payload: fallbackArticles });
+      } catch (fallbackError) {
+        console.error('❌ AppContext: Fallback also failed:', fallbackError);
+        dispatch({ type: 'SET_ERROR', payload: 'Failed to fetch news. Please try again later.' });
+      }
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
@@ -216,14 +261,63 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_LOADING', payload: true });
     
     try {
-      // Generate more articles (6 more = 1-2 per category)
-      const moreArticles = await generateArticles(state.articles.length + 1, 6);
+      console.log('🔄 AppContext: Loading more real news articles...');
       
-      if (moreArticles.length > 0) {
-        dispatch({ type: 'ADD_ARTICLES', payload: moreArticles });
+      // Import the real news service
+      const { NewsService } = await import('../services/api');
+      
+      // Calculate page number based on current articles
+      const currentPage = Math.floor(state.articles.length / 10) + 1;
+      
+      // Fetch more real articles
+      const moreRealArticles = await NewsService.loadMoreNews(currentPage);
+      
+      if (moreRealArticles && moreRealArticles.length > 0) {
+        console.log(`✅ AppContext: Successfully loaded ${moreRealArticles.length} more real articles`);
+        
+        // Convert ProcessedArticle to Article format
+        const convertedArticles: Article[] = moreRealArticles.map((article, index) => ({
+          id: article.id || `real-more-${state.articles.length + index}`,
+          title: article.title,
+          summary: article.summary || 'No summary available',
+          content: article.what || article.summary || 'No content available',
+          imageUrl: article.imageUrl,
+          sourceUrl: article.sourceUrl,
+          source: article.source,
+          publishedAt: article.publishedAt,
+          category: article.category === 'cybersecurity' ? 'Security Basics' : 
+                   article.category === 'hacking' ? 'Major Breaches' : 'Privacy Tips',
+          whyItMatters: [
+            'Stay informed about cybersecurity threats',
+            'Protect your personal information',
+            'Learn about latest security practices',
+            'Make informed decisions about online safety'
+          ],
+          isFavorite: false,
+        }));
+        
+        dispatch({ type: 'ADD_ARTICLES', payload: convertedArticles });
+      } else {
+        console.log('⚠️ AppContext: No more real articles available, using fallback');
+        // Fallback to generated articles if no more real ones available
+        const moreArticles = await generateArticles(state.articles.length + 1, 6);
+        if (moreArticles.length > 0) {
+          dispatch({ type: 'ADD_ARTICLES', payload: moreArticles });
+        }
       }
     } catch (error) {
-      console.error('Error loading more news:', error);
+      console.error('❌ AppContext: Error loading more real news:', error);
+      console.log('🔄 AppContext: Falling back to generated articles');
+      
+      // Fallback to generated articles on error
+      try {
+        const moreArticles = await generateArticles(state.articles.length + 1, 6);
+        if (moreArticles.length > 0) {
+          dispatch({ type: 'ADD_ARTICLES', payload: moreArticles });
+        }
+      } catch (fallbackError) {
+        console.error('❌ AppContext: Fallback also failed:', fallbackError);
+      }
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }

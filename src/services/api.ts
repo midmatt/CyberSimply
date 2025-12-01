@@ -17,7 +17,7 @@ import { UnifiedNewsService } from './unifiedNewsService';
  * 3. Test API connectivity
  */
 
-const GEMINI_API_KEY = 'AIzaSyDFU-32VvOADVl4x4y4kqvqK1BNGnxjk5A';
+const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 
 export class NewsService {
   static async fetchNewsFromAPI(page: number = 1): Promise<any[]> {

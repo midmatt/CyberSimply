@@ -5,7 +5,7 @@ import Constants from 'expo-constants';
 
 // Initialize OpenAI client
 const client = new OpenAI({ 
-  apiKey: "process.env.OPENAI_API_KEY-z0eVlWP3PfeoVhtPlqgAsIYx4DE-CJY-bZqgpnpFdePl8hu4WBDYXzY21D-w2qM2GN4xwI-xl4T3BlbkFJPL6vdd10DpjeNMhizmc6kMGD4127VaSLdSRRE_HVGW5v_okiw9Wf30kI8kzx7h1R5jt1_X-ZsA"
+  apiKey: process.env.EXPO_PUBLIC_OPENAI_API_KEY || ""
 });
 
 console.log("🤖 OpenAI client initialized with API key:", client.apiKey ? "✅ Present" : "❌ Missing");

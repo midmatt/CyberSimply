@@ -24,6 +24,8 @@ export interface ContentAnalysis {
   category: string;
   keyTopics: string[];
   riskLevel: 'low' | 'medium' | 'high';
+  actionability: number;
+  readability: number;
 }
 
 export class ContentModerationService {
@@ -103,7 +105,9 @@ Provide analysis in JSON format:
   "complexity": "beginner|intermediate|advanced",
   "category": "specific category name",
   "keyTopics": ["topic1", "topic2", "topic3"],
-  "riskLevel": "low|medium|high"
+  "riskLevel": "low|medium|high",
+  "actionability": 85,
+  "readability": 75
 }
 
 Consider:
@@ -112,7 +116,9 @@ Consider:
 - Complexity: Technical difficulty level for readers
 - Category: Most appropriate cybersecurity category
 - Key Topics: Main themes and subjects covered
-- Risk Level: Potential risk or threat level discussed`;
+- Risk Level: Potential risk or threat level discussed
+- Actionability: Score 0-100 for how actionable the content is
+- Readability: Score 0-100 for how clear and readable the content is`;
 
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
@@ -158,7 +164,9 @@ Consider:
         complexity: 'intermediate',
         category: 'general',
         keyTopics: [],
-        riskLevel: 'medium'
+        riskLevel: 'medium',
+        actionability: 50,
+        readability: 50
       };
     }
   }

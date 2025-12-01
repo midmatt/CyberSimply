@@ -25,11 +25,11 @@ export class AIArticleGenerationService {
   private maxQuota: number = 100000; // High limit for Pro accounts
 
   private constructor() {
-    this.apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY || 'process.env.OPENAI_API_KEY-CXghJFcg9WZhEVet-rR6BmdI-zsIxX_674dZHaeKUJT2h0FJMT0m7rMWmHA_ZWlPAW0RvUW6wtT3BlbkFJhR4I7ENNmwbZxKNDrItE0IHBZpwxYQQw3hh7nhobXzS-aKZR_CTjhXO7fWUWquekl9Gj30oR4A';
+    this.apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY || '';
     this.baseUrl = process.env.EXPO_PUBLIC_OPENAI_API_URL || 'https://api.openai.com/v1';
     
     // Validate API key and adjust limits accordingly
-    const isProAccount = this.apiKey.startsWith('process.env.OPENAI_API_KEY') && this.apiKey.length > 20;
+    const isProAccount = this.apiKey.startsWith('sk-') && this.apiKey.length > 20;
     if (isProAccount) {
       this.maxQuota = 100000; // High limit for Pro accounts
       console.log('AIArticleGenerationService: Pro account detected - unlimited generation enabled');

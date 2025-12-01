@@ -48,16 +48,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderRightWidth: 1,
     borderRightColor: '#e9ecef',
-    minHeight: '100vh',
+    minHeight: '100%',
   },
   mainContent: {
     flex: 1,
-    display: 'flex',
     flexDirection: 'column',
   },
   content: {
     flex: 1,
     padding: 24,
-    overflow: 'auto',
   },
 });

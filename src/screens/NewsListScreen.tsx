@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { NewsCard } from '../components/NewsCard';
 import { SearchBar } from '../components/SearchBar';
@@ -46,7 +47,7 @@ type RouteParams = {
 };
 
 export function NewsListScreen() {
-  const navigation = useNavigation<NavigationProp>();
+  const navigation = useNavigation<StackNavigationProp<any, any>>();
   const route = useRoute<RouteProp<{ params: RouteParams }, 'params'>>();
   const { state, refreshNews, toggleFavorite, favorites, loadMoreNews, getRecentArticles } = useNews();
   const { colors, isDark } = useTheme();

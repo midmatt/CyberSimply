@@ -12,9 +12,10 @@ interface SearchBarProps {
   value: string;
   onChangeText: (text: string) => void;
   placeholder?: string;
+  onSubmitEditing?: () => void;
 }
 
-export function SearchBar({ value, onChangeText, placeholder = "Search news..." }: SearchBarProps) {
+export function SearchBar({ value, onChangeText, placeholder = "Search news...", onSubmitEditing }: SearchBarProps) {
   const { colors } = useTheme();
 
   const handleClear = () => {
@@ -39,6 +40,7 @@ export function SearchBar({ value, onChangeText, placeholder = "Search news..." 
           placeholderTextColor={colors.textSecondary}
           value={value}
           onChangeText={onChangeText}
+          onSubmitEditing={onSubmitEditing}
           autoCapitalize="none"
           autoCorrect={false}
           editable={true}

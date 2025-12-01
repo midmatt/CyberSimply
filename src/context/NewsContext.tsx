@@ -342,19 +342,58 @@ export function NewsProvider({ children }: { children: ReactNode }) {
 
     } catch (error) {
       console.error('NewsContext: Error in fetchNews:', error);
-      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : 'Failed to fetch news from Supabase' });
+      console.log('NewsContext: Supabase failed, trying real news services...');
       
-      // Fallback: try to load from local storage
-      console.log('NewsContext: Attempting fallback to local storage...');
+      // Fallback 1: Try real news services
       try {
-        const localArticles = await ArticleStorageService.getArticles();
-        if (localArticles.length > 0) {
-          console.log(`NewsContext: Loaded ${localArticles.length} articles from local storage as fallback`);
-          dispatch({ type: 'SET_ARTICLES', payload: localArticles });
-          dispatch({ type: 'SET_ERROR', payload: null }); // Clear error since we have fallback data
+        const { NewsService } = await import('../services/api');
+        const realArticles = await NewsService.fetchNewsFromAPI(1);
+        
+        if (realArticles && realArticles.length > 0) {
+          console.log(`NewsContext: Successfully fetched ${realArticles.length} articles from real news services`);
+          
+          // Convert ProcessedArticle to ProcessedArticle format (they should be the same)
+          const processedArticles = realArticles.map((article, index) => ({
+            id: article.id || `real-${index}`,
+            title: article.title,
+            summary: article.summary || 'No summary available',
+            sourceUrl: article.sourceUrl,
+            source: article.source,
+            author: article.author,
+            authorDisplay: article.authorDisplay || article.author || 'Unknown',
+            publishedAt: article.publishedAt,
+            imageUrl: article.imageUrl,
+            category: article.category,
+            what: article.what || article.summary || 'No content available',
+            impact: article.impact || 'No impact information available',
+            takeaways: article.takeaways || 'No takeaways available',
+            whyThisMatters: article.whyThisMatters || 'This information is important for your cybersecurity awareness'
+          }));
+          
+          dispatch({ type: 'SET_ARTICLES', payload: processedArticles });
+          dispatch({ type: 'SET_ERROR', payload: null }); // Clear error since we have real data
+          console.log('NewsContext: Successfully loaded articles from real news services');
+        } else {
+          throw new Error('No articles from real news services');
         }
-      } catch (fallbackError) {
-        console.error('NewsContext: Fallback to local storage also failed:', fallbackError);
+      } catch (realNewsError) {
+        console.error('NewsContext: Real news services also failed:', realNewsError);
+        console.log('NewsContext: Attempting fallback to local storage...');
+        
+        // Fallback 2: try to load from local storage
+        try {
+          const localArticles = await ArticleStorageService.getArticles();
+          if (localArticles.length > 0) {
+            console.log(`NewsContext: Loaded ${localArticles.length} articles from local storage as fallback`);
+            dispatch({ type: 'SET_ARTICLES', payload: localArticles });
+            dispatch({ type: 'SET_ERROR', payload: null }); // Clear error since we have fallback data
+          } else {
+            dispatch({ type: 'SET_ERROR', payload: 'No articles available from any source' });
+          }
+        } catch (fallbackError) {
+          console.error('NewsContext: Fallback to local storage also failed:', fallbackError);
+          dispatch({ type: 'SET_ERROR', payload: 'Failed to fetch news from all sources' });
+        }
       }
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });

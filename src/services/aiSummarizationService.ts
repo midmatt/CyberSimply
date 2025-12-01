@@ -20,12 +20,12 @@ const USE_GEMINI = false; // Disable Gemini completely due to API issues
 const USE_FALLBACK = false; // ❌ DISABLED - No fallback summaries, only real AI summaries
 
 // API Keys - Use environment variables for security
-const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || 'process.env.OPENAI_API_KEY-CXghJFcg9WZhEVet-rR6BmdI-zsIxX_674dZHaeKUJT2h0FJMT0m7rMWmHA_ZWlPAW0RvUW6wtT3BlbkFJhR4I7ENNmwbZxKNDrItE0IHBZpwxYQQw3hh7nhobXzS-aKZR_CTjhXO7fWUWquekl9Gj30oR4A';
-const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || 'AIzaSyDFU-32VvOADVl4x4y4kqvqK1BNGnxjk5A';
+const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || '';
+const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 
 // Validate API key format
 const validateOpenAIKey = (key: string): boolean => {
-  return key.startsWith('process.env.OPENAI_API_KEY') && key.length > 20;
+  return key.startsWith('sk-') && key.length > 20;
 };
 
 // Check if we have a valid Pro account key
