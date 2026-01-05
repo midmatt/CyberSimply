@@ -25,7 +25,100 @@ jobs:
         with:
           node-version: 20
 
-      - run: npm install
+      - "react": "^18.3.1",Your workflow file is failing because you accidentally pasted **`package.json` dependency lines directly into the GitHub Actions YAML**, which makes the YAML invalid and does **nothing** to fix the React version conflict.
+
+### What’s wrong right now
+These lines **do not belong in a workflow file** and will always break it:
+```yaml
+- "react": "^18.3.1",
+"react-dom": "^18.3.1"
+```
+
+GitHub Actions **cannot modify dependencies like this**. Dependencies must be changed in `package.json`.
+
+---
+
+## ✅ Correct Fix (Do This)
+
+### 1️⃣ Fix `package.json` (required)
+In your repo root, edit **`package.json`** and set React to v18:
+
+```json
+{
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}
+```
+
+Then commit that change.
+
+---
+
+### 2️⃣ Fix your GitHub Actions workflow
+Replace the **entire steps section** with this clean, valid version:
+
+```yaml
+steps:
+  - uses: actions/checkout@v3
+
+  - name: Setup Node
+    uses: actions/setup-node@v3
+    with:
+      node-version: 20
+      cache: npm
+
+  - name: Install dependencies
+    run: npm install
+
+  - name: Fetch and store articles
+    run: node fetch-articles.mjs
+
+  - name: Debug repo structure
+    run: |
+      pwd
+      ls -la
+
+  - name: Verify Supabase CLI availability
+    if: ${{ env.SUPABASE_PROJECT_REF != '' && env.SUPABASE_ACCESS_TOKEN != '' }}
+    run: npx supabase@latest --version
+
+  - name: Test Article Summary Fields
+    if: ${{ env.SUPABASE_PROJECT_REF != '' && env.SUPABASE_ACCESS_TOKEN != '' }}
+    run: |
+      npx supabase@latest login --token "$SUPABASE_ACCESS_TOKEN"
+      npx supabase@latest link --project-ref "$SUPABASE_PROJECT_REF"
+      echo "🔍 Testing article summary fields..."
+      npx supabase@latest db execute ./sql/test-article-summary-check.sql
+```
+
+---
+
+## ❌ Do NOT do this
+- ❌ Put dependency versions in `.yml`
+- ❌ Use `--force` or `--legacy-peer-deps` in CI
+- ❌ Upgrade to React 19 yet (react-native-web does not support it)
+
+---
+
+## ✅ Why this works
+- React 18 satisfies `react-native-web@0.19.12`
+- YAML is now syntactically valid
+- CI installs dependencies exactly once
+- Supabase steps only run when secrets exist
+
+---
+
+If you want, I can:
+- Verify `fetch-articles.mjs` compatibility with Node 20
+- Add a lockfile safety check
+- Convert this job to a reusable workflow
+- Optimize CI runtime
+
+Just say the word.
+        "react-dom": "^18.3.1"
+         run: npm install
 
       # Run the correct script (located at root of repo, not in /scripts)
       - name: Fetch and store articles
