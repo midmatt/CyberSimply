@@ -1,30 +1,31 @@
-name: Fetch and Summarize Articles (CLI Alternative)
+name: Fetch and Summarize Articles
 
 on:
   schedule:
-    - cron: "0 */6 * * *"  # Runs every 6 hours
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
+env:
+  SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+  SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+  NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
+  NEWS_DATA_API_KEY: ${{ secrets.NEWS_DATA_API_KEY }}
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+concurrency:
+  group: fetch-and-summarize-articles
+  cancel-in-progress: false
+
 jobs:
-  fetch:
+  fetch-and-summarize:
     runs-on: ubuntu-latest
 
-    env:
-      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
-      NEWSDATA_API_KEY: ${{ secrets.NEWSDATA_API_KEY }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-
     steps:
-      # Checkout code
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      # Setup Node.js environment
-      - uses: actions/setup-node@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
         with:
           node-version: 20
 
@@ -32,13 +33,13 @@ jobs:
       - name: Align React versions
         run: |
           echo "🔧 Fixing React dependency conflicts..."
-          npm pkg set react@18.3.1 react-dom@18.3.1 react-native-web@0.19.12
+          npm pkg set dependencies.react=18.3.1 dependencies.react-dom=18.3.1 dependencies.react-native-web=0.19.12
 
-      # Clean install with a fresh lockfile
       - name: Install dependencies
         run: |
           rm -f package-lock.json
           npm install
+          npm install @supabase/supabase-js node-fetch
 
       # Run your Node script
       - name: Run article fetcher
@@ -48,7 +49,7 @@ jobs:
       - name: Verify Supabase CLI availability
         if: ${{ env.SUPABASE_PROJECT_REF != '' && env.SUPABASE_ACCESS_TOKEN != '' }}
         run: npx supabase@latest --version
-          
+
       # Run Supabase SQL test
       - name: Test Article Summary Fields
         if: ${{ env.SUPABASE_PROJECT_REF != '' && env.SUPABASE_ACCESS_TOKEN != '' }}
@@ -57,9 +58,5 @@ jobs:
           npx supabase@latest login --token "$SUPABASE_ACCESS_TOKEN"
           echo "🔗 Linking project..."
           npx supabase@latest link --project-ref "$SUPABASE_PROJECT_REF"
-          echo "🧠 Testing article summary fields..."
+          echo "🤠 Testing article summary fields..."
           npx supabase@latest db execute ./sql/test-article-summary-check.sql
-        env:
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-
