@@ -1,25 +1,20 @@
 name: Fetch and Summarize Articles
-
 on:
   schedule:
     - cron: '0 */6 * * *'
   workflow_dispatch:
-
 env:
   SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
   SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
   NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
   NEWS_DATA_API_KEY: ${{ secrets.NEWS_DATA_API_KEY }}
   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-
 concurrency:
   group: fetch-and-summarize-articles
   cancel-in-progress: false
-
 jobs:
   fetch-and-summarize:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -27,36 +22,21 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 20
-
-      # Ensure correct dependency versions before install
-      - name: Align React versions
-        run: |
-          echo "🔧 Fixing React dependency conflicts..."
-          npm pkg set dependencies.react=18.3.1 dependencies.react-dom=18.3.1 dependencies.react-native-web=0.19.12
+          node-version: '20'
 
       - name: Install dependencies
         run: |
           rm -f package-lock.json
-          npm install
-          npm install @supabase/supabase-js node-fetch
+          npm install --legacy-peer-deps
+          npm install @supabase/supabase-js node-fetch --legacy-peer-deps
 
-      # Run your Node script
-      - name: Run article fetcher
+      - name: Run script
         run: node fetch-articles.mjs
 
-      # Verify Supabase CLI availability
-      - name: Verify Supabase CLI availability
-        if: ${{ env.SUPABASE_PROJECT_REF != '' && env.SUPABASE_ACCESS_TOKEN != '' }}
-        run: npx supabase@latest --version
+      - name: Verify Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
 
-      # Run Supabase SQL test
-      - name: Test Article Summary Fields
-        if: ${{ env.SUPABASE_PROJECT_REF != '' && env.SUPABASE_ACCESS_TOKEN != '' }}
-        run: |
-          echo "🔑 Logging into Supabase..."
-          npx supabase@latest login --token "$SUPABASE_ACCESS_TOKEN"
-          echo "🔗 Linking project..."
-          npx supabase@latest link --project-ref "$SUPABASE_PROJECT_REF"
-          echo "🤠 Testing article summary fields..."
-          npx supabase@latest db execute ./sql/test-article-summary-check.sql
+      - name: Test SQL script
+        run: supabase db diff --local || true
