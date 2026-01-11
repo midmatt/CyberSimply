@@ -22,14 +22,27 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+    - name: Checkout repository
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        if [ ! -d .git ]; then
+          git init
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+        fi
+        git fetch --depth=1 origin "${GITHUB_SHA}"
+        git checkout --force "${GITHUB_SHA}"
+        git submodule sync --recursive
+        git submodule update --init --recursive
       
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
+    - name: Setup Node.js 20
+      run: |
+        set -euo pipefail
+        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+        corepack enable
         
     - name: Install dependencies
       run: |
@@ -40,9 +53,19 @@ jobs:
       run: npx expo export --platform web
       
     - name: Deploy to GitHub Pages
-      uses: peaceiris/actions-gh-pages@v3
-      if: github.ref == 'refs/heads/main'
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./dist
-        cname: cybersimply.com
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+          echo "Deployment only runs on main branch. Current ref: ${GITHUB_REF}"
+          exit 0
+        fi
+
+        npx --yes gh-pages@6.0.0 \
+          --dotfiles \
+          --message "Deploy to GitHub Pages" \
+          --dest dist \
+          --branch gh-pages \
+          --repo "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+          --cname cybersimply.com

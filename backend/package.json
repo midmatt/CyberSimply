@@ -1,7 +1,7 @@
 {
-  "name": "cybersafe-news-backend",
+  "name": "cybersimply-backend",
   "version": "1.0.0",
-  "description": "Backend API for CyberSafe News app with Buy Me a Coffee integration",
+  "description": "Backend API for CyberSimply app with Buy Me a Coffee integration",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -25,6 +25,6 @@
     "buymeacoffee",
     "supabase"
   ],
-  "author": "CyberSafe News",
+  "author": "CyberSimply",
   "license": "MIT"
 }
