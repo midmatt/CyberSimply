@@ -180,6 +180,46 @@ async function storeArticles(articles) {
   console.log('='.repeat(60));
 }
 
+// --- Cleanup any duplicate rows already in the table (keep oldest id per source_url) ---
+async function cleanupDuplicates() {
+  try {
+    // Fetch a window of recent rows; adjust limit if the table is large
+    const { data, error } = await supabase
+      .from('articles')
+      .select('id, source_url')
+      .order('id', { ascending: true })
+      .limit(5000);
+
+    if (error) throw error;
+    if (!data || data.length === 0) return;
+
+    const seen = new Map(); // url -> keepId
+    const toDelete = [];
+
+    for (const row of data) {
+      const url = cleanUrl(row.source_url);
+      if (!url) continue;
+      if (!seen.has(url)) {
+        seen.set(url, row.id);
+      } else {
+        toDelete.push(row.id);
+      }
+    }
+
+    if (toDelete.length === 0) {
+      console.log('🧹 No duplicate rows to delete.');
+      return;
+    }
+
+    console.log(`🧹 Removing ${toDelete.length} duplicate rows (by source_url)`);
+    const { error: delError } = await supabase.from('articles').delete().in('id', toDelete);
+    if (delError) throw delError;
+    console.log('🧹 Duplicate cleanup complete.');
+  } catch (err) {
+    console.error('⚠️ Duplicate cleanup skipped:', err.message);
+  }
+}
+
 // --- Main flow ---
 async function main() {
   try {
@@ -263,6 +303,7 @@ async function main() {
     console.log('='.repeat(60));
 
     await storeArticles(merged);
+    await cleanupDuplicates();
 
     console.log('\n✅ Finished fetching & storing articles');
     console.log('');

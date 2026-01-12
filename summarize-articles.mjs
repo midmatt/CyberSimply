@@ -5,12 +5,36 @@
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+// Ensure fetch is available (GitHub-hosted runners on Node 20 have it,
+// but this guards any fallback environments)
+if (typeof globalThis.fetch === 'undefined') {
+  const { default: fetch } = await import('node-fetch');
+  globalThis.fetch = fetch;
+}
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Validate required env upfront for clear failures
+const requiredEnv = {
+  SUPABASE_URL: process.env.SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+};
+
+const missing = Object.entries(requiredEnv)
+  .filter(([, v]) => !v || `${v}`.trim() === '')
+  .map(([k]) => k);
+
+if (missing.length) {
+  console.error(`❌ Missing required env vars: ${missing.join(', ')}`);
+  process.exit(1);
+}
+
+if (!requiredEnv.SUPABASE_URL.startsWith('http')) {
+  console.error('❌ SUPABASE_URL is not a valid URL');
+  process.exit(1);
+}
+
+const supabase = createClient(requiredEnv.SUPABASE_URL, requiredEnv.SUPABASE_SERVICE_ROLE_KEY);
+const openai = new OpenAI({ apiKey: requiredEnv.OPENAI_API_KEY });
 
 const BATCH_SIZE = Number(process.env.SUMMARY_BATCH_SIZE || 25);
 
@@ -33,19 +57,31 @@ const needsSummary = (article) => {
 };
 
 const fetchArticlesNeedingSummary = async () => {
-  const { data, error } = await supabase
-    .from('articles')
-    .select(
-      'id, title, summary, source, source_url, category, what, impact, takeaways, why_this_matters, ai_summary_generated'
-    )
-    .order('published_at', { ascending: false })
-    .limit(200);
+  try {
+    const { data, error } = await supabase
+      .from('articles')
+      .select(
+        'id, title, summary, source, source_url, category, what, impact, takeaways, why_this_matters, ai_summary_generated'
+      )
+      .order('published_at', { ascending: false })
+      .limit(200);
 
-  if (error) {
-    throw new Error(`Failed to load articles: ${error.message}`);
+    if (error) {
+      throw new Error(`Supabase query error: ${error.message}`);
+    }
+
+    return (data || []).filter(needsSummary).slice(0, BATCH_SIZE);
+  } catch (err) {
+    const maskedUrl = (() => {
+      try {
+        const url = new URL(requiredEnv.SUPABASE_URL);
+        return `${url.origin}`;
+      } catch {
+        return '<invalid-url>';
+      }
+    })();
+    throw new Error(`Failed to load articles: ${err.message} (supabase=${maskedUrl})`);
   }
-
-  return (data || []).filter(needsSummary).slice(0, BATCH_SIZE);
 };
 
 const ensureSentence = (text) => {
