@@ -48,7 +48,10 @@ if (!requiredEnv.SUPABASE_URL.startsWith('http')) {
 const supabase = createClient(requiredEnv.SUPABASE_URL, requiredEnv.SUPABASE_SERVICE_ROLE_KEY);
 const anthropic = new Anthropic({ apiKey: requiredEnv.ANTHROPIC_API_KEY });
 
-const BATCH_SIZE = Number(process.env.SUMMARY_BATCH_SIZE || 25);
+// Daily inflow is ~37 articles, so the old batch of 25 could never keep up,
+// let alone drain a backlog. 150 clears the backlog in a few weeks and then
+// self-limits, since the query only returns rows that actually need work.
+const BATCH_SIZE = Number(process.env.SUMMARY_BATCH_SIZE || 150);
 
 // Fail the job when more than this share of attempted articles fail.
 const FAILURE_RATE_THRESHOLD = Number(process.env.SUMMARY_FAILURE_THRESHOLD || 0.5);
@@ -74,21 +77,42 @@ const needsSummary = (article) => {
   );
 };
 
+// Server-side equivalent of needsSummary(). Previously this fetched the 200
+// most recent articles and filtered in JS, which made anything outside that
+// window permanently unreachable — a backlog of 2751 rows had accumulated
+// invisibly. The limit now bounds the batch, not the search space.
+//
+// In practice every row needing a summary has the flag unset (rows with the
+// flag set but blank fields: 0), so the null checks are defensive. needsSummary
+// is still applied client-side to catch the '' / 'N/A' cases exactly.
+const NEEDS_SUMMARY_FILTER = [
+  'ai_summary_generated.is.false',
+  'ai_summary_generated.is.null',
+  'what.is.null',
+  'impact.is.null',
+  'takeaways.is.null',
+  'why_this_matters.is.null',
+].join(',');
+
 const fetchArticlesNeedingSummary = async () => {
   try {
+    // Ordered by updated_at rather than published_at so freshly fetched
+    // articles and rows re-flagged for regeneration both surface first,
+    // instead of being buried behind years of backlog.
     const { data, error } = await supabase
       .from('articles')
       .select(
         'id, title, summary, source, source_url, category, what, impact, takeaways, why_this_matters, ai_summary_generated'
       )
-      .order('published_at', { ascending: false })
-      .limit(200);
+      .or(NEEDS_SUMMARY_FILTER)
+      .order('updated_at', { ascending: false })
+      .limit(BATCH_SIZE);
 
     if (error) {
       throw new Error(`Supabase query error: ${error.message}`);
     }
 
-    return (data || []).filter(needsSummary).slice(0, BATCH_SIZE);
+    return (data || []).filter(needsSummary);
   } catch (err) {
     const maskedUrl = (() => {
       try {
