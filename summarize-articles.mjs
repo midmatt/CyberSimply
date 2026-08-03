@@ -115,9 +115,13 @@ const ensureSentence = (text) => {
 
 const normalizeTakeaways = (text) => {
   if (!text) return 'N/A';
+  // Split on line breaks and bullet characters only. Splitting on "-" as well
+  // tore hyphenated words apart mid-bullet ("Wi-Fi" became "Wi." / "Fi
+  // networks."), which affected 9 of 25 summaries in the validation run.
+  // Leading list markers are stripped per line instead.
   const bullets = text
-    .split(/\r?\n|•|-/)
-    .map((b) => b.trim())
+    .split(/\r?\n|•/)
+    .map((b) => b.replace(/^\s*[-*]\s+/, '').trim())
     .filter(Boolean);
 
   if (bullets.length === 0) return 'N/A';
