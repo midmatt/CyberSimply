@@ -63,7 +63,20 @@ jobs:
 
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           MSG="🚨 CyberSimply: '${GITHUB_WORKFLOW}' failed. No new articles were stored. ${RUN_URL}"
+          echo "Alert message: ${MSG}"
+
           # 'text' is Slack's field, 'content' is Discord's; each ignores the other,
           # so one secret works with either provider.
-          jq -n --arg m "$MSG" '{text: $m, content: $m}' \
-            | curl -sS -X POST -H 'Content-Type: application/json' -d @- "$ALERT_WEBHOOK_URL"
+          # Capture the status: a bare `curl -sS` exits 0 even when the provider
+          # rejects the payload, which would make the alerting itself fail silently.
+          HTTP_CODE=$(jq -n --arg m "$MSG" '{text: $m, content: $m}' \
+            | curl -sS -o /tmp/alert-response.txt -w '%{http_code}' \
+                -X POST -H 'Content-Type: application/json' -d @- "$ALERT_WEBHOOK_URL")
+
+          echo "Webhook HTTP status: ${HTTP_CODE}"
+          if [ "${HTTP_CODE}" -lt 200 ] || [ "${HTTP_CODE}" -ge 300 ]; then
+            echo "::error::Alert webhook rejected the message (HTTP ${HTTP_CODE})"
+            cat /tmp/alert-response.txt || true
+          else
+            echo "✅ Alert delivered (HTTP ${HTTP_CODE})."
+          fi
