@@ -2,8 +2,20 @@
 // Summarizes stored articles and backfills structured fields without truncation.
 // Run with: node summarize-articles.mjs
 
+import fs from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
-import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
+
+// Surfaces run results on the GitHub Actions run page. No-op outside CI.
+const writeJobSummary = (markdown) => {
+  const target = process.env.GITHUB_STEP_SUMMARY;
+  if (!target) return;
+  try {
+    fs.appendFileSync(target, `${markdown}\n`);
+  } catch (err) {
+    console.warn(`⚠️ Could not write job summary: ${err.message}`);
+  }
+};
 
 // Ensure fetch is available (GitHub-hosted runners on Node 20 have it,
 // but this guards any fallback environments)
@@ -16,7 +28,7 @@ if (typeof globalThis.fetch === 'undefined') {
 const requiredEnv = {
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
-  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
 };
 
 const missing = Object.entries(requiredEnv)
@@ -34,9 +46,15 @@ if (!requiredEnv.SUPABASE_URL.startsWith('http')) {
 }
 
 const supabase = createClient(requiredEnv.SUPABASE_URL, requiredEnv.SUPABASE_SERVICE_ROLE_KEY);
-const openai = new OpenAI({ apiKey: requiredEnv.OPENAI_API_KEY });
+const anthropic = new Anthropic({ apiKey: requiredEnv.ANTHROPIC_API_KEY });
 
 const BATCH_SIZE = Number(process.env.SUMMARY_BATCH_SIZE || 25);
+
+// Fail the job when more than this share of attempted articles fail.
+const FAILURE_RATE_THRESHOLD = Number(process.env.SUMMARY_FAILURE_THRESHOLD || 0.5);
+
+// Haiku tier: this runs once per article, so cost per call matters more than depth.
+const MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5';
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -97,9 +115,13 @@ const ensureSentence = (text) => {
 
 const normalizeTakeaways = (text) => {
   if (!text) return 'N/A';
+  // Split on line breaks and bullet characters only. Splitting on "-" as well
+  // tore hyphenated words apart mid-bullet ("Wi-Fi" became "Wi." / "Fi
+  // networks."), which affected 9 of 25 summaries in the validation run.
+  // Leading list markers are stripped per line instead.
   const bullets = text
-    .split(/\r?\n|•|-/)
-    .map((b) => b.trim())
+    .split(/\r?\n|•/)
+    .map((b) => b.replace(/^\s*[-*]\s+/, '').trim())
     .filter(Boolean);
 
   if (bullets.length === 0) return 'N/A';
@@ -118,39 +140,73 @@ const normalizeCategory = (value) => {
   return allowed.includes(normalized) ? normalized : 'general';
 };
 
+// Structured outputs: the API constrains the response to this schema, so a
+// well-formed object is guaranteed rather than hoped for. Every object needs
+// `additionalProperties: false` and a complete `required` list.
+const SUMMARY_SCHEMA = {
+  type: 'object',
+  properties: {
+    category: {
+      type: 'string',
+      enum: ['cybersecurity', 'hacking', 'general'],
+      description: 'Best-fit category for the article.',
+    },
+    what: {
+      type: 'string',
+      description: '1-2 complete sentences describing what happened.',
+    },
+    impact: {
+      type: 'string',
+      description: '1-2 complete sentences on real-world impact.',
+    },
+    takeaways: {
+      type: 'string',
+      description: '2-3 bullet points in a single string, each line starting with "- ".',
+    },
+    why_this_matters: {
+      type: 'string',
+      description: '1-2 complete sentences explaining why this matters.',
+    },
+  },
+  required: ['category', 'what', 'impact', 'takeaways', 'why_this_matters'],
+  additionalProperties: false,
+};
+
 async function summarizeArticle(article) {
   const prompt = `
-Summarize the article below with COMPLETE sentences. Do not trail off or use ellipses.
-Return valid JSON with these exact fields:
-- category: one of "cybersecurity", "hacking", or "general"
-- what: 1-2 complete sentences describing what happened
-- impact: 1-2 complete sentences on real-world impact
-- takeaways: 2-3 bullet points as a single string, each bullet starting with "- "
-- why_this_matters: 1-2 complete sentences explaining importance
+Summarize the article below for a general (non-technical) audience, using COMPLETE
+sentences. Do not trail off or use ellipses. Every sentence must end with punctuation.
 
 Title: ${article.title || 'Unknown title'}
 Summary: ${article.summary || 'No summary available'}
-Source: ${article.source || 'Unknown'}
+Source: ${article.source || 'Unknown'}`.trim();
 
-Ensure every sentence is complete and ends with punctuation.`.trim();
-
-  const response = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages: [
-      {
-        role: 'system',
-        content:
-          'You write concise, fully-finished summaries for cybersecurity news. Always return valid JSON and end sentences with punctuation.',
-      },
-      { role: 'user', content: prompt },
-    ],
-    response_format: { type: 'json_object' },
+  const response = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 1024,
     temperature: 0.35,
-    max_tokens: 700,
+    system:
+      'You write concise, fully-finished summaries of cybersecurity news for a general audience. End every sentence with punctuation.',
+    messages: [{ role: 'user', content: prompt }],
+    output_config: { format: { type: 'json_schema', schema: SUMMARY_SCHEMA } },
   });
 
-  const content = response.choices?.[0]?.message?.content || '{}';
-  return JSON.parse(content);
+  // Fail loudly on the two ways this can come back unusable. Silently accepting
+  // either is what let the previous outage go unnoticed.
+  if (response.stop_reason === 'refusal') {
+    throw new Error('model refused to summarize this article');
+  }
+  if (response.stop_reason === 'max_tokens') {
+    throw new Error('response truncated at max_tokens; JSON is incomplete');
+  }
+
+  // content is a list of typed blocks — pick the text block rather than indexing [0].
+  const text = response.content.find((block) => block.type === 'text')?.text;
+  if (!text) {
+    throw new Error(`no text block in response (stop_reason=${response.stop_reason})`);
+  }
+
+  return JSON.parse(text);
 }
 
 async function processBatch() {
@@ -158,7 +214,7 @@ async function processBatch() {
 
   if (articles.length === 0) {
     console.log('✅ No articles need summarization.');
-    return;
+    return { success: 0, failures: 0 };
   }
 
   console.log(`🧠 Summarizing ${articles.length} article(s)...`);
@@ -197,18 +253,69 @@ async function processBatch() {
       failures++;
     }
 
-    await wait(800); // throttle OpenAI usage
+    await wait(800); // throttle Anthropic usage
   }
 
   console.log('\n' + '='.repeat(60));
   console.log(`🎯 Summary complete: ${success} success, ${failures} failed`);
   console.log('='.repeat(60));
+
+  return { success, failures };
 }
 
 async function main() {
   try {
     console.log('🚀 Starting summarization job...');
-    await processBatch();
+    const { success, failures } = await processBatch();
+    const attempted = success + failures;
+
+    writeJobSummary(
+      [
+        '## 🧠 Summarize Articles',
+        '',
+        '| Metric | Count |',
+        '| --- | ---: |',
+        `| Attempted | ${attempted} |`,
+        `| Summarized | ${success} |`,
+        `| Failed | ${failures} |`,
+        `| Model | \`${MODEL}\` |`,
+        '',
+        attempted === 0
+          ? '✅ No articles needed summarization.'
+          : success === 0
+            ? '❌ **Zero summaries written — every article failed.**'
+            : failures > 0
+              ? `⚠️ ${failures}/${attempted} failed.`
+              : '✅ All articles summarized.',
+      ].join('\n')
+    );
+
+    // Nothing to summarize is a legitimately green run.
+    if (attempted === 0) {
+      return;
+    }
+
+    // Every per-article failure path lands here: JSON parse errors, Supabase
+    // write errors, and the refusal / max_tokens guards in summarizeArticle,
+    // which throw rather than returning a partial object. A run that "handled"
+    // every error cleanly but wrote nothing is a failed run, not a green one.
+    if (success === 0) {
+      console.error(`💥 All ${attempted} article(s) failed to summarize. Failing the job.`);
+      process.exit(1);
+    }
+
+    const failureRate = failures / attempted;
+    if (failureRate > FAILURE_RATE_THRESHOLD) {
+      console.error(
+        `💥 Failure rate ${(failureRate * 100).toFixed(0)}% (${failures}/${attempted}) exceeds ` +
+          `${(FAILURE_RATE_THRESHOLD * 100).toFixed(0)}% threshold. Failing the job.`
+      );
+      process.exit(1);
+    }
+
+    if (failures > 0) {
+      console.warn(`⚠️ ${failures}/${attempted} article(s) failed, below the failure threshold.`);
+    }
   } catch (err) {
     console.error('💥 Summarization job failed:', err);
     process.exit(1);

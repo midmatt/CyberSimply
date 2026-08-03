@@ -20,19 +20,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          if [ ! -d .git ]; then
-            git init
-            git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}"
-          fi
-          git fetch --depth=1 origin "${GITHUB_SHA}"
-          git checkout --force "${GITHUB_SHA}"
-          git submodule sync --recursive
-          git submodule update --init --recursive
+        uses: actions/checkout@v4
 
       - name: Setup Node.js 20
         run: |
@@ -47,20 +35,48 @@ jobs:
       - name: Fetch and store fresh articles
         run: |
           set -euo pipefail
+          # Missing secrets are a misconfiguration, not a reason to report green.
           if [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ] || [ -z "${SUPABASE_URL:-}" ]; then
-            echo "Supabase secrets are not set. Skipping article fetch."
-            exit 0
+            echo "::error::Supabase secrets are not set."
+            exit 1
           fi
 
           if [ -z "${NEWS_API_KEY:-}" ] && [ -z "${NEWSDATA_API_KEY:-}" ]; then
-            echo "No news provider API keys configured. Skipping article fetch."
-            exit 0
+            echo "::error::No news provider API keys configured."
+            exit 1
           fi
 
           node fetch-articles.mjs
 
-      - name: Debug repo structure (if needed)
+      - name: Alert on failure
         if: failure()
+        env:
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
         run: |
-          pwd
-          ls -la
+          set -euo pipefail
+          echo "### ❌ Fetch Articles failed" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -z "${ALERT_WEBHOOK_URL:-}" ]; then
+            echo "No ALERT_WEBHOOK_URL secret set; skipping webhook notification."
+            exit 0
+          fi
+
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          MSG="🚨 CyberSimply: '${GITHUB_WORKFLOW}' failed. No new articles were stored. ${RUN_URL}"
+          echo "Alert message: ${MSG}"
+
+          # 'text' is Slack's field, 'content' is Discord's; each ignores the other,
+          # so one secret works with either provider.
+          # Capture the status: a bare `curl -sS` exits 0 even when the provider
+          # rejects the payload, which would make the alerting itself fail silently.
+          HTTP_CODE=$(jq -n --arg m "$MSG" '{text: $m, content: $m}' \
+            | curl -sS -o /tmp/alert-response.txt -w '%{http_code}' \
+                -X POST -H 'Content-Type: application/json' -d @- "$ALERT_WEBHOOK_URL")
+
+          echo "Webhook HTTP status: ${HTTP_CODE}"
+          if [ "${HTTP_CODE}" -lt 200 ] || [ "${HTTP_CODE}" -ge 300 ]; then
+            echo "::error::Alert webhook rejected the message (HTTP ${HTTP_CODE})"
+            cat /tmp/alert-response.txt || true
+          else
+            echo "✅ Alert delivered (HTTP ${HTTP_CODE})."
+          fi
