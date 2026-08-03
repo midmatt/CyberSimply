@@ -2,8 +2,20 @@
 // Fetches raw articles (no AI summarization) and stores clean metadata in Supabase.
 // Run with: node fetch-articles.mjs
 
+import fs from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
+
+// Surfaces run results on the GitHub Actions run page. No-op outside CI.
+const writeJobSummary = (markdown) => {
+  const target = process.env.GITHUB_STEP_SUMMARY;
+  if (!target) return;
+  try {
+    fs.appendFileSync(target, `${markdown}\n`);
+  } catch (err) {
+    console.warn(`⚠️ Could not write job summary: ${err.message}`);
+  }
+};
 
 // --- Setup Supabase client ---
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -16,6 +28,11 @@ const newsDataKey = process.env.NEWSDATA_API_KEY;
 
 // --- Helper: wait/throttle ---
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Fail the job when more than this share of store attempts error. Tolerates
+// occasional articles_title_unique collisions; catches systemic breakage like
+// the articles_category_check failures that silently dropped ~25% per run.
+const STORE_ERROR_THRESHOLD = Number(process.env.STORE_ERROR_THRESHOLD || 0.2);
 
 // --- Helpers for URL validation/cleanup ---
 const isValidHttpUrl = (value) => {
@@ -37,6 +54,17 @@ const cleanUrl = (value) => {
   return url.toString();
 };
 
+// Mirrors the helper in summarize-articles.mjs. The articles_category_check
+// constraint only permits these three values, so provider categories
+// ("technology", "top", "business", ...) and NewsAPI's null must be mapped
+// before insert or the row is rejected outright.
+const normalizeCategory = (value) => {
+  const allowed = ['cybersecurity', 'hacking', 'general'];
+  if (!value) return 'general';
+  const normalized = `${value}`.trim().toLowerCase();
+  return allowed.includes(normalized) ? normalized : 'general';
+};
+
 const publicationFrom = (source, url) => {
   if (source?.trim()) return source.trim();
   if (!isValidHttpUrl(url)) return 'Unknown';
@@ -56,7 +84,7 @@ const baseRecordFrom = (article) => {
     author: article.author?.trim() || null,
     published_at: article.published_at || new Date().toISOString(),
     image_url: imageUrl,
-    category: article.category?.trim() || null,
+    category: normalizeCategory(article.category),
     ai_summary_generated: false,
     what: null,
     impact: null,
@@ -128,7 +156,8 @@ async function fetchNewsDataArticles() {
 
 // --- Store articles in Supabase (insert-only on URL conflict) ---
 async function storeArticles(articles) {
-  let successCount = 0;
+  let insertedCount = 0;
+  let duplicateCount = 0;
   let errorCount = 0;
   let skippedCount = 0;
 
@@ -156,15 +185,23 @@ async function storeArticles(articles) {
         source: article.source,
       });
 
-      const { error } = await supabase
+      // ignoreDuplicates issues ON CONFLICT DO NOTHING, which returns no error
+      // when the row already exists. Without .select() a no-op conflict was
+      // indistinguishable from a real insert, so "inserted" counted both.
+      // .select() returns only rows actually written.
+      const { data, error } = await supabase
         .from('articles')
-        .upsert(article, { onConflict: 'source_url', ignoreDuplicates: true });
+        .upsert(article, { onConflict: 'source_url', ignoreDuplicates: true })
+        .select('id');
 
       if (error) {
         console.error(`   ❌ Failed to upsert: ${error.message}`);
         errorCount++;
+      } else if (data && data.length > 0) {
+        insertedCount++;
       } else {
-        successCount++;
+        duplicateCount++;
+        console.log(`   ↪️ Already present, no row written`);
       }
     } catch (err) {
       console.error(`   ❌ Error processing article: ${err.message}`);
@@ -176,8 +213,13 @@ async function storeArticles(articles) {
   }
 
   console.log('\n' + '='.repeat(60));
-  console.log(`📊 Storage complete: ${successCount} inserted, ${skippedCount} skipped, ${errorCount} errors`);
+  console.log(
+    `📊 Storage complete: ${insertedCount} inserted, ${duplicateCount} already present, ` +
+      `${skippedCount} skipped, ${errorCount} errors`
+  );
   console.log('='.repeat(60));
+
+  return { insertedCount, duplicateCount, skippedCount, errorCount };
 }
 
 // --- Cleanup any duplicate rows already in the table (keep oldest id per source_url) ---
@@ -302,7 +344,7 @@ async function main() {
     console.log(`📦 Preparing to store ${merged.length} unique articles`);
     console.log('='.repeat(60));
 
-    await storeArticles(merged);
+    const storage = await storeArticles(merged);
     await cleanupDuplicates();
 
     console.log('\n✅ Finished fetching & storing articles');
@@ -311,8 +353,55 @@ async function main() {
     console.log(`   NewsAPI: ${newsAPIArticles.length} articles${newsAPIFailed ? ' (FAILED)' : ''}`);
     console.log(`   NewsData: ${newsDataArticles.length} articles`);
     console.log(`   Total unique: ${merged.length} articles`);
+    console.log(`   Newly stored: ${storage.insertedCount} articles`);
     if (usedFallback) {
       console.log('   ⚠️  Fallback mode was used due to NewsAPI rate limit');
+    }
+
+    writeJobSummary(
+      [
+        '## 📰 Fetch Articles',
+        '',
+        '| Metric | Count |',
+        '| --- | ---: |',
+        `| NewsAPI fetched | ${newsAPIArticles.length}${newsAPIFailed ? ' (FAILED)' : ''} |`,
+        `| NewsData fetched | ${newsDataArticles.length} |`,
+        `| Unique after dedup | ${merged.length} |`,
+        `| **Newly stored** | **${storage.insertedCount}** |`,
+        `| Already present | ${storage.duplicateCount} |`,
+        `| Skipped (bad title/URL) | ${storage.skippedCount} |`,
+        `| Errors | ${storage.errorCount} |`,
+        '',
+        usedFallback ? '⚠️ Fallback mode: NewsAPI rate-limited, used NewsData only.\n' : '',
+        storage.errorCount > 0
+          ? `❌ **${storage.errorCount} article(s) failed to store.**`
+          : storage.insertedCount === 0
+            ? 'ℹ️ No new articles — everything fetched was already in the database.'
+            : `✅ Stored ${storage.insertedCount} new article(s).`,
+      ].join('\n')
+    );
+
+    // Storing nothing is normal (everything was already present). Storing
+    // nothing *because inserts are failing* is not.
+    //
+    // Not every store error is systemic: articles_title_unique means a headline
+    // republished at a new URL collides and errors, which is expected noise.
+    // Paging on a single collision would recreate the alert fatigue that let
+    // this outage run for 57 days, so fail on the rate, not on the count.
+    const attemptedStores = storage.insertedCount + storage.duplicateCount + storage.errorCount;
+    const storeErrorRate = attemptedStores > 0 ? storage.errorCount / attemptedStores : 0;
+
+    if (storeErrorRate > STORE_ERROR_THRESHOLD) {
+      console.error(
+        `\n❌ ${storage.errorCount}/${attemptedStores} article(s) failed to store ` +
+          `(${(storeErrorRate * 100).toFixed(0)}%), above the ` +
+          `${(STORE_ERROR_THRESHOLD * 100).toFixed(0)}% threshold. Failing the job.`
+      );
+      process.exit(1);
+    }
+
+    if (storage.errorCount > 0) {
+      console.warn(`⚠️ ${storage.errorCount}/${attemptedStores} store error(s), below the threshold.`);
     }
   } catch (err) {
     console.error('❌ Script failed:', err);

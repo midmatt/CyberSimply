@@ -12,25 +12,11 @@ jobs:
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
     steps:
       - name: Checkout repository
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          if [ ! -d .git ]; then
-            git init
-            git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}"
-          fi
-          git fetch --depth=1 origin "${GITHUB_SHA}"
-          git checkout --force "${GITHUB_SHA}"
-          git submodule sync --recursive
-          git submodule update --init --recursive
+        uses: actions/checkout@v4
 
       - name: Setup Node.js 20
         run: |
@@ -45,39 +31,41 @@ jobs:
       - name: Summarize stored articles
         run: |
           set -euo pipefail
+          # Missing secrets are a misconfiguration, not a reason to report green.
           if [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ] || [ -z "${SUPABASE_URL:-}" ]; then
-            echo "Supabase secrets are not set. Skipping summarization."
-            exit 0
+            echo "::error::Supabase secrets are not set."
+            exit 1
           fi
 
-          if [ -z "${OPENAI_API_KEY:-}" ]; then
-            echo "OpenAI API key is missing. Skipping summarization."
-            exit 0
+          if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "::error::ANTHROPIC_API_KEY is not set."
+            exit 1
           fi
 
           node summarize-articles.mjs
 
-      - name: Verify Supabase CLI availability
+      # Separate from the per-run pass/fail above: this asserts the data is
+      # actually fresh, catching the case where runs are green but nothing new
+      # is arriving.
+      - name: Check pipeline freshness
+        run: node health-check.mjs
+
+      - name: Alert on failure
+        if: failure()
+        env:
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
         run: |
           set -euo pipefail
-          if [ -z "${SUPABASE_PROJECT_REF:-}" ] || [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
-            echo "Supabase secrets are not set. Skipping Supabase CLI verification."
+          echo "### ❌ Summarize Articles failed" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -z "${ALERT_WEBHOOK_URL:-}" ]; then
+            echo "No ALERT_WEBHOOK_URL secret set; skipping webhook notification."
             exit 0
           fi
 
-          npx supabase@latest --version
-          
-      - name: Test Article Summary Fields
-        run: |
-          set -euo pipefail
-          if [ -z "${SUPABASE_PROJECT_REF:-}" ] || [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
-            echo "Supabase secrets are not set. Skipping article summary field test."
-            exit 0
-          fi
-
-          echo "🔑 Logging into Supabase..."
-          npx supabase@latest login --token "$SUPABASE_ACCESS_TOKEN"
-          echo "🔗 Linking project..."
-          npx supabase@latest link --project-ref "$SUPABASE_PROJECT_REF"
-          echo "🧠 Testing article summary fields..."
-          npx supabase@latest db execute ./sql/test-article-summary-check.sql
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          MSG="🚨 CyberSimply: '${GITHUB_WORKFLOW}' failed. Articles may be unsummarized or stale. ${RUN_URL}"
+          # 'text' is Slack's field, 'content' is Discord's; each ignores the other,
+          # so one secret works with either provider.
+          jq -n --arg m "$MSG" '{text: $m, content: $m}' \
+            | curl -sS -X POST -H 'Content-Type: application/json' -d @- "$ALERT_WEBHOOK_URL"

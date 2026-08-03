@@ -1,0 +1,76 @@
+# Prevents GitHub from auto-disabling this repo's scheduled workflows.
+#
+# GitHub disables `schedule:`-triggered workflows after 60 days of *repository*
+# inactivity. Workflow runs do NOT count as activity — only commits do. That is
+# why the article pipeline ran daily for six months and was still disabled
+# (last push: 2026-01-12). This has caused two multi-week silent outages:
+# 2026-03-14 -> 05-14 and 2026-07-14 -> 08-03.
+#
+# So this workflow makes a real commit every two weeks. The push resets the
+# inactivity clock for every workflow in the repo, including this one, so it is
+# self-sustaining. `workflow_dispatch` is here so it can be kicked manually if
+# everything ever does end up disabled at once.
+
+name: Keepalive
+
+on:
+  schedule:
+    - cron: "0 6 1,15 * *"  # 1st and 15th of each month, 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write   # push the keepalive commit
+  actions: write    # re-enable workflows if they were already disabled
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Commit keepalive marker
+        run: |
+          set -euo pipefail
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .github/last-keepalive
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Stage first: `git diff` alone ignores untracked files, so on the very
+          # first run (marker not yet in the index) it would report no change and
+          # never push.
+          git add .github/last-keepalive
+          if git diff --cached --quiet; then
+            echo "Marker unchanged; nothing to commit."
+            exit 0
+          fi
+
+          # [skip ci] is belt-and-braces: pushes made with GITHUB_TOKEN already
+          # do not trigger new workflow runs, so deploy.yml stays put either way.
+          git commit -m "chore: keepalive to prevent scheduled-workflow auto-disable [skip ci]"
+          git push
+
+      - name: Re-enable article workflows if disabled
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          for wf in fetch-articles.yml fetch-and-summarize-articles.yml; do
+            state=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${wf}" --jq '.state')
+            echo "${wf}: ${state}"
+            if [ "${state}" != "active" ]; then
+              echo "::warning::${wf} was ${state} — re-enabling it."
+              gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/${wf}/enable"
+              echo "⚠️ \`${wf}\` was \`${state}\` and has been re-enabled." >> "$GITHUB_STEP_SUMMARY"
+
+              if [ -n "${ALERT_WEBHOOK_URL:-}" ]; then
+                RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+                MSG="⚠️ CyberSimply: '${wf}' was ${state} and has been re-enabled. The pipeline was not running. ${RUN_URL}"
+                jq -n --arg m "$MSG" '{text: $m, content: $m}' \
+                  | curl -sS -X POST -H 'Content-Type: application/json' -d @- "$ALERT_WEBHOOK_URL"
+              fi
+            fi
+          done
