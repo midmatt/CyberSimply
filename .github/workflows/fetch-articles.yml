@@ -20,7 +20,19 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          if [ ! -d .git ]; then
+            git init
+            git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+          fi
+          git fetch --depth=1 origin "${GITHUB_SHA}"
+          git checkout --force "${GITHUB_SHA}"
+          git submodule sync --recursive
+          git submodule update --init --recursive
 
       - name: Setup Node.js 20
         run: |

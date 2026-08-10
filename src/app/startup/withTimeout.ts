@@ -1,32 +1,57 @@
 // src/app/startup/withTimeout.ts
+
+export type WithTimeoutOptions = {
+  /** When true, timeouts/errors are logged at debug level only (no LogBox). */
+  quiet?: boolean;
+};
+
+/**
+ * Race a promise against a timeout. Always resolves (never rejects) so
+ * non-critical startup work cannot block the UI. Expected timeouts should
+ * pass `{ quiet: true }` to avoid LogBox yellow boxes in development.
+ */
 export function withTimeout<T>(
   promise: Promise<T>,
   ms = 3500,
-  label = 'startup'
-): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
+  label = 'startup',
+  options: WithTimeoutOptions = {}
+): Promise<T | undefined> {
+  const { quiet = false } = options;
+
+  return new Promise<T | undefined>((resolve) => {
     let done = false;
     const id = setTimeout(() => {
       if (!done) {
-        console.warn(`[startup] timeout after ${ms}ms: ${label}`);
-        // Resolve with undefined for non-critical steps; reject only for truly critical ones.
-        // We'll resolve with undefined here; callers can handle default/fallback.
-        // @ts-ignore
+        done = true;
+        if (quiet) {
+          if (__DEV__) {
+            console.log(`[startup] timeout after ${ms}ms: ${label} (non-critical)`);
+          }
+        } else {
+          console.warn(`[startup] timeout after ${ms}ms: ${label}`);
+        }
         resolve(undefined);
       }
     }, ms);
+
     promise
       .then((v) => {
+        if (done) return;
         done = true;
         clearTimeout(id);
         resolve(v);
       })
       .catch((e) => {
+        if (done) return;
         done = true;
         clearTimeout(id);
-        console.warn(`[startup] error in ${label}:`, e);
-        // Resolve undefined so UI can continue; log for telemetry.
-        // @ts-ignore
+        if (quiet) {
+          if (__DEV__) {
+            console.log(`[startup] error in ${label} (non-critical):`, e);
+          }
+        } else {
+          console.warn(`[startup] error in ${label}:`, e);
+        }
         resolve(undefined);
       });
   });

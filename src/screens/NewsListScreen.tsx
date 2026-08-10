@@ -14,6 +14,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { NewsCard } from '../components/NewsCard';
+import { SkeletonFeed } from '../components/SkeletonCard';
 import { SearchBar } from '../components/SearchBar';
 import { useNews } from '../context/NewsContext';
 import { useTheme } from '../context/ThemeContext';
@@ -295,13 +296,9 @@ export function NewsListScreen() {
   ), [handleArticlePress, handleToggleFavorite, favorites]);
 
   const renderEmptyState = useCallback(() => {
+    // Initial fetch only — pull-to-refresh keeps existing cards + RefreshControl.
     if (state.loading) {
-      return (
-        <View style={styles.emptyState}>
-          <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={styles.loadingText}>Loading cybersecurity news...</Text>
-        </View>
-      );
+      return <SkeletonFeed count={5} />;
     }
 
     if (state.error) {
@@ -323,7 +320,7 @@ export function NewsListScreen() {
         </Text>
       </View>
     );
-  }, [state.loading, state.error, searchQuery, colors.accent]);
+  }, [state.loading, state.error, searchQuery]);
 
   const renderFooter = useCallback(() => {
     return (

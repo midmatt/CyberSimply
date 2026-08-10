@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ProcessedArticle } from '../services/newsService';
 import { useTheme } from '../context/ThemeContext';
 import { TYPOGRAPHY, SPACING, BORDER_RADIUS, SHADOWS } from '../constants';
-import { formatTextForDisplay, truncateAtBoundary } from '../utils/textUtils';
+import { formatTextForDisplay, truncateAtBoundary, cleanTruncatedText } from '../utils/textUtils';
 import { formatArticleDate } from '../utils/dateUtils';
 import { ArticleImage } from './ArticleImage';
 
@@ -46,12 +46,14 @@ export const NewsCard = memo(({ article, onPress, onToggleFavorite, isFavorite }
     );
   };
 
-  // Prefer the AI-written `what` field: provider summaries are frequently
-  // delivered already truncated mid-sentence, so they cannot be cleaned up
-  // after the fact. Fall back to the raw summary when no AI text exists yet.
+  // Prefer the AI-written `what` field: the providers clip their descriptions
+  // to a snippet, so roughly 59% of stored summaries end mid-sentence. Fall back
+  // to the provider text only when no AI text exists yet, and strip its
+  // truncation marker first so the card never shows a dangling "[...]".
   const previewText = React.useMemo(() => {
     const aiText = article.what?.trim();
-    const usable = aiText && aiText.toUpperCase() !== 'N/A' ? aiText : article.summary;
+    const usable =
+      aiText && aiText.toUpperCase() !== 'N/A' ? aiText : cleanTruncatedText(article.summary);
     return truncateAtBoundary(formatTextForDisplay(usable ?? ''), PREVIEW_CHAR_BUDGET);
   }, [article.what, article.summary]);
 

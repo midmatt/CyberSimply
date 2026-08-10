@@ -50,6 +50,60 @@ target 'CyberSimply' do
       :ccache_enabled => podfile_properties['apple.ccacheEnabled'] == 'true',
     )
 
+    # fmt 11.0.2 (vendored by React Native 0.76) marks the basic_format_string
+    # constructor consteval, which Xcode 26's clang rejects for the FMT_STRING
+    # call sites in format-inl.h. Upstream fixed this in fmt 11.1, which only
+    # ships with React Native 0.77+. Dropping the consteval qualifier leaves the
+    # constructor constexpr and is the smallest change that keeps this React
+    # Native version compiling. A -D override is not usable because base.h
+    # defines the macro unconditionally.
+    fmt_base_h = File.join(__dir__, 'Pods', 'fmt', 'include', 'fmt', 'base.h')
+    if File.exist?(fmt_base_h)
+      source = File.read(fmt_base_h)
+      if source.include?('#  define FMT_CONSTEVAL consteval')
+        File.write(fmt_base_h, source.sub('#  define FMT_CONSTEVAL consteval', '#  define FMT_CONSTEVAL'))
+        Pod::UI.puts '[fmt] dropped consteval qualifier for Xcode 26 compatibility'
+      end
+    end
+
+    # This checkout lives under "/Volumes/Extreme SSD". Several build scripts
+    # interpolate absolute paths into a single `sh -c` string or leave an
+    # expansion unquoted, so the space splits one path into two words. Quote
+    # them at the call sites and inside the two scripts that re-split what they
+    # receive.
+    script_patches = [
+      [File.join(__dir__, '..', 'node_modules', 'react-native', 'scripts', 'xcode', 'with-environment.sh'),
+       "if [ -n \"$1\" ]; then\n  $1\n",
+       "if [ -n \"$1\" ]; then\n  \"$1\"\n"],
+      [File.join(__dir__, '..', 'node_modules', 'expo-constants', 'scripts', 'get-app-config-ios.sh'),
+       'PROJECT_DIR_BASENAME=$(basename $PROJECT_DIR)',
+       'PROJECT_DIR_BASENAME=$(basename "$PROJECT_DIR")'],
+    ]
+    script_patches.each do |path, from, to|
+      next unless File.exist?(path)
+      source = File.read(path)
+      next unless source.include?(from)
+      File.write(path, source.sub(from, to))
+      Pod::UI.puts "[paths] quoted expansion in #{File.basename(path)}"
+    end
+
+    phase_patches = [
+      ['/bin/sh -c "$WITH_ENVIRONMENT $SCRIPT_PHASES_SCRIPT"',
+       '/bin/sh -c "\"$WITH_ENVIRONMENT\" \"$SCRIPT_PHASES_SCRIPT\""'],
+      ['bash -l -c "$PODS_TARGET_SRCROOT/../scripts/get-app-config-ios.sh"',
+       'bash -l -c "\"$PODS_TARGET_SRCROOT/../scripts/get-app-config-ios.sh\""'],
+    ]
+    installer.pods_project.targets.each do |target|
+      target.build_phases.each do |phase|
+        next unless phase.respond_to?(:shell_script) && phase.shell_script
+        phase_patches.each do |from, to|
+          next unless phase.shell_script.include?(from)
+          phase.shell_script = phase.shell_script.sub(from, to)
+          Pod::UI.puts "[paths] quoted script phase paths for #{target.name}"
+        end
+      end
+    end
+
     # This is necessary for Xcode 14, because it signs resource bundles by default
     # when building for devices.
     installer.target_installation_results.pod_target_installation_results

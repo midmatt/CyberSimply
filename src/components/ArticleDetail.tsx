@@ -17,7 +17,7 @@ import { Article } from '../types';
 import { ProcessedArticle } from '../services/newsService';
 import { useTheme } from '../context/ThemeContext';
 import { TYPOGRAPHY, SPACING, BORDER_RADIUS, SHADOWS } from '../constants';
-import { formatTextForDisplay } from '../utils/textUtils';
+import { formatTextForDisplay, cleanTruncatedText } from '../utils/textUtils';
 import { RootStackParamList } from '../types';
 import { AdBanner } from './AdBanner';
 import { ExpandableSummary } from './ExpandableSummary';
@@ -276,8 +276,14 @@ export function ArticleDetail() {
   // Determine if this is a ProcessedArticle or Article
   const isProcessedArticle = 'what' in article && 'impact' in article && 'takeaways' in article;
   
-  // Get the appropriate content
-  const content = isProcessedArticle ? article.summary : (article as Article).content;
+  // Get the appropriate content. The provider snippet is clipped upstream, so
+  // strip the truncation marker; if that leaves nothing usable, fall back to the
+  // AI text, which is always written as complete sentences.
+  const providerSummary = isProcessedArticle
+    ? cleanTruncatedText(article.summary)
+    : (article as Article).content;
+  const content =
+    providerSummary || (isProcessedArticle ? (article as ProcessedArticle).what : '');
   const whyThisMatters = isProcessedArticle 
     ? (article as ProcessedArticle).whyThisMatters
     : (article as Article).whyItMatters?.[0] || '';

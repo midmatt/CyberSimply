@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { NewsCard } from '../components/NewsCard';
+import { SkeletonFeed } from '../components/SkeletonCard';
 import { SearchBar } from '../components/SearchBar';
 import { useNews } from '../context/NewsContext';
 import { useTheme } from '../context/ThemeContext';
@@ -190,6 +191,13 @@ export function CategoryArticlesScreen() {
   ), [handleArticlePress, handleToggleFavorite, favorites]);
 
   const renderEmptyState = useCallback(() => {
+    // Category fetch sets state.loading via switchToCategory → fetchNews.
+    // While in-flight the category filter usually yields an empty list, so
+    // skeletons fill the screen instead of a false "no articles" empty state.
+    if (state.loading && !searchQuery.trim()) {
+      return <SkeletonFeed count={5} />;
+    }
+
     return (
       <View style={styles.emptyState}>
         <Ionicons 
@@ -211,7 +219,7 @@ export function CategoryArticlesScreen() {
         </Text>
       </View>
     );
-  }, [searchQuery, category, colors.textSecondary]);
+  }, [state.loading, searchQuery, category, colors.textSecondary]);
 
   const keyExtractor = useCallback((item: ProcessedArticle) => item.id, []);
 
@@ -236,8 +244,11 @@ export function CategoryArticlesScreen() {
 
         <Text style={styles.subtitle}>{category.description}</Text>
         <Text style={styles.articleCount}>
-          {filteredArticles.length} article{filteredArticles.length !== 1 ? 's' : ''} found
-          {searchQuery.trim() && ` for "${searchQuery}"`}
+          {state.loading && filteredArticles.length === 0
+            ? 'Loading articles...'
+            : `${filteredArticles.length} article${filteredArticles.length !== 1 ? 's' : ''} found${
+                searchQuery.trim() ? ` for "${searchQuery}"` : ''
+              }`}
         </Text>
         
         <SearchBar

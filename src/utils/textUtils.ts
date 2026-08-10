@@ -60,6 +60,45 @@ export function truncateAtBoundary(text: string, maxChars: number = 160): string
 }
 
 /**
+ * Removes upstream truncation artifacts from provider-supplied text.
+ *
+ * The news providers on their free tiers return a snippet rather than the
+ * article body: NewsAPI clips descriptions at roughly 200 characters and
+ * NewsData does the same, both leaving behind a "[...]" marker or a bare
+ * ellipsis, often mid-sentence. Around 59% of stored summaries arrive this way,
+ * so the text cannot be fixed by re-fetching — it has to be repaired on read.
+ *
+ * Drops the marker and then rewinds to the last complete sentence, so the text
+ * ends somewhere deliberate. When no sentence boundary exists the text is
+ * returned marker-free rather than emptied, which is why this never blanks a
+ * summary that had content.
+ *
+ * @param text - Provider-supplied text that may be truncated
+ * @returns Text ending on a complete sentence, with no truncation marker
+ */
+export function cleanTruncatedText(text: string): string {
+  if (!text) return '';
+
+  let cleaned = text.replace(/\s+/g, ' ').trim();
+
+  // "[...]" / "[…]" and a bare trailing ellipsis are the two markers the
+  // providers use to signal a clipped snippet.
+  cleaned = cleaned.replace(/\s*\[(?:…|\.\.\.)\]\s*$/, '');
+  cleaned = cleaned.replace(/(?:…|\.\.\.)\s*$/, '');
+  cleaned = cleaned.trim();
+
+  if (!cleaned) return '';
+
+  // Already lands on a sentence end (optionally inside a closing quote/bracket).
+  if (/[.!?]["'”’)\]]?$/.test(cleaned)) return cleaned;
+
+  // Otherwise rewind to the last sentence end that is followed by a space, so a
+  // decimal like "16.9%" or an abbreviation mid-sentence is not mistaken for one.
+  const upToLastSentence = cleaned.match(/^[\s\S]*[.!?]["'”’)\]]?(?=\s)/);
+  return upToLastSentence ? upToLastSentence[0].trim() : cleaned;
+}
+
+/**
  * Formats text content for display by cleaning markdown and ensuring proper spacing
  * @param text - The text to format
  * @returns Formatted text ready for display

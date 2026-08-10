@@ -1,0 +1,17 @@
+{
+  "java.configuration.runtimes": [
+    {
+      "name": "JavaSE-21",
+      "path": "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home",
+      "default": true
+    }
+  ],
+  "java.jdt.ls.java.home": "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home",
+  "java.import.gradle.java.home": "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home",
+  "java.import.exclusions": [
+    "**/node_modules/**",
+    "**/ios/**"
+  ],
+  "java.project.importOnFirstTimeStartup": "disabled",
+  "java.import.gradle.wrapper.enabled": true
+}
