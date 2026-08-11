@@ -622,9 +622,9 @@ const CLASSIFICATION_SCHEMA = {
     },
     confidence: {
       type: 'integer',
-      minimum: 1,
-      maximum: 5,
-      description: 'Certainty that this meets the breaking bar. 5 = unambiguous.',
+      description:
+        'Certainty that this meets the breaking bar, as an integer from 1 to 5. ' +
+        '5 = unambiguous.',
     },
     one_line_summary: {
       type: 'string',
