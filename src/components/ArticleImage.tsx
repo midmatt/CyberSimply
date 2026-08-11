@@ -1,14 +1,38 @@
 import React, { useState } from 'react';
-import { View, Image, StyleSheet, Text } from 'react-native';
+import {
+  View,
+  Image,
+  StyleSheet,
+  Text,
+  type ImageResizeMode,
+  type StyleProp,
+  type ViewStyle,
+  type ImageStyle,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { TYPOGRAPHY, SPACING } from '../constants';
 
 interface ArticleImageProps {
   imageUrl?: string | null;
-  style?: any;
-  containerStyle?: any;
+  style?: StyleProp<ImageStyle>;
+  containerStyle?: StyleProp<ViewStyle>;
   showPlaceholder?: boolean;
+  /**
+   * Passed to the native Image as a prop rather than a style entry. Setting it
+   * through `style` is unreliable once styles are merged, which left remote
+   * images stretching to their container instead of filling it.
+   */
+  resizeMode?: ImageResizeMode;
+  placeholderIconSize?: number;
+  /** Placeholder caption is noise in small thumbnails. */
+  showPlaceholderText?: boolean;
+  /**
+   * Rendered in place of the generic placeholder when there is no artwork, so
+   * a caller can fill the slot with something meaningful (a category tile)
+   * rather than leaving a blank grey box. Also used when a remote image 404s.
+   */
+  fallback?: React.ReactNode;
 }
 
 export const ArticleImage: React.FC<ArticleImageProps> = ({
@@ -16,26 +40,22 @@ export const ArticleImage: React.FC<ArticleImageProps> = ({
   style,
   containerStyle,
   showPlaceholder = true,
+  resizeMode = 'cover',
+  placeholderIconSize = 48,
+  showPlaceholderText = true,
+  fallback,
 }) => {
   const { colors } = useTheme();
   const [imageError, setImageError] = useState(false);
   const [imageLoading, setImageLoading] = useState(true);
 
-  const handleImageError = (error: any) => {
-    console.log(`❌ Image failed to load: ${imageUrl}`);
-    console.log(`❌ Image error:`, error);
+  const handleImageError = () => {
     setImageError(true);
     setImageLoading(false);
   };
 
   const handleImageLoad = () => {
-    console.log(`✅ Image loaded successfully: ${imageUrl}`);
     setImageLoading(false);
-  };
-
-  const handleImageLoadStart = () => {
-    console.log(`🔄 Starting to load image: ${imageUrl}`);
-    setImageLoading(true);
   };
 
   const styles = StyleSheet.create({
@@ -43,18 +63,17 @@ export const ArticleImage: React.FC<ArticleImageProps> = ({
       backgroundColor: colors.surface,
       justifyContent: 'center',
       alignItems: 'center',
-      ...containerStyle,
+      // The container always clips, so a `cover` image can never bleed past the
+      // rounded corners of whichever card is hosting it.
+      overflow: 'hidden',
     },
     image: {
       width: '100%',
       height: '100%',
-      resizeMode: 'cover',
-      ...style,
     },
     placeholder: {
       width: '100%',
       height: '100%',
-      backgroundColor: colors.surface,
       justifyContent: 'center',
       alignItems: 'center',
     },
@@ -64,29 +83,34 @@ export const ArticleImage: React.FC<ArticleImageProps> = ({
       marginTop: SPACING.xs,
       textAlign: 'center',
     },
-    loadingContainer: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
+    loadingOverlay: {
+      ...StyleSheet.absoluteFillObject,
       backgroundColor: colors.surface,
       justifyContent: 'center',
       alignItems: 'center',
     },
   });
 
-  // If no image URL or image failed to load, show placeholder
   if (!imageUrl || imageError) {
+    if (fallback) {
+      return <View style={[styles.container, containerStyle]}>{fallback}</View>;
+    }
+
     if (!showPlaceholder) return null;
-    
+
     return (
       <View style={[styles.container, containerStyle]}>
         <View style={styles.placeholder}>
-          <Ionicons name="newspaper-outline" size={48} color={colors.textSecondary} />
-          <Text style={styles.placeholderText}>
-            {imageError ? 'Image failed to load' : 'No image available'}
-          </Text>
+          <Ionicons
+            name="newspaper-outline"
+            size={placeholderIconSize}
+            color={colors.textSecondary}
+          />
+          {showPlaceholderText && (
+            <Text style={styles.placeholderText}>
+              {imageError ? 'Image failed to load' : 'No image available'}
+            </Text>
+          )}
         </View>
       </View>
     );
@@ -94,18 +118,24 @@ export const ArticleImage: React.FC<ArticleImageProps> = ({
 
   return (
     <View style={[styles.container, containerStyle]}>
-      {imageLoading && (
-        <View style={styles.loadingContainer}>
-          <Ionicons name="hourglass-outline" size={24} color={colors.textSecondary} />
-        </View>
-      )}
       <Image
         source={{ uri: imageUrl }}
         style={[styles.image, style]}
+        resizeMode={resizeMode}
         onError={handleImageError}
         onLoad={handleImageLoad}
-        onLoadStart={handleImageLoadStart}
+        onLoadStart={() => setImageLoading(true)}
       />
+
+      {imageLoading && (
+        <View style={styles.loadingOverlay} pointerEvents="none">
+          <Ionicons
+            name="image-outline"
+            size={Math.min(placeholderIconSize, 24)}
+            color={colors.textSecondary}
+          />
+        </View>
+      )}
     </View>
   );
 };

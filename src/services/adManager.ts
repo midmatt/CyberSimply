@@ -23,10 +23,12 @@ export class AdManager {
   public shouldShowAds(isAdFree: boolean): boolean {
     const shouldShow = !isAdFree;
     
-    console.log('🎯 [AdManager] Should show ads:', shouldShow, {
-      isAdFree,
-      timestamp: new Date().toISOString()
-    });
+    if (__DEV__) {
+      console.log('🎯 [AdManager] Should show ads:', shouldShow, {
+        isAdFree,
+        timestamp: new Date().toISOString()
+      });
+    }
     
     return shouldShow;
   }
@@ -47,6 +49,7 @@ export class AdManager {
    * Log ad display decision for debugging
    */
   public logAdDecision(componentName: string, isAdFree: boolean, willShow: boolean) {
+    if (!__DEV__) return;
     console.log(`🎯 [AdManager] ${componentName}:`, {
       isAdFree,
       willShow,

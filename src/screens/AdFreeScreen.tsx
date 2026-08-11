@@ -6,7 +6,6 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   StatusBar,
@@ -20,6 +19,7 @@ import { useNavigation } from '@react-navigation/native';
 import { iapService, IAPProduct, PRODUCT_IDS } from '../services/iapService';
 import { useAdFree } from '../context/AdFreeContext';
 import { TYPOGRAPHY, SPACING } from '../constants';
+import { SkeletonFeed } from '../components/SkeletonCard';
 
 export function AdFreeScreen() {
   const { colors, isDark } = useTheme();
@@ -571,10 +571,7 @@ export function AdFreeScreen() {
           <View style={styles.headerSpacer} />
         </View>
         <View style={styles.content}>
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="small" color={colors.accent} />
-            <Text style={styles.loadingText}>Loading...</Text>
-          </View>
+          <SkeletonFeed count={3} variant="panel" />
         </View>
       </SafeAreaView>
     );
@@ -717,10 +714,7 @@ export function AdFreeScreen() {
                 disabled={isProcessing}
               >
                 {isProcessing && selectedProduct === product.productId ? (
-                  <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="small" color={colors.background} />
-                    <Text style={styles.loadingText}>Processing...</Text>
-                  </View>
+                  <Text style={styles.buttonText}>Processing…</Text>
                 ) : (
                   <Text style={styles.buttonText}>
                     Subscribe
@@ -760,7 +754,7 @@ export function AdFreeScreen() {
           disabled={isProcessing}
         >
           {isProcessing ? (
-            <ActivityIndicator size="small" color={colors.accent} />
+            <Text style={[styles.buttonText, styles.restoreButtonText]}>Restoring…</Text>
           ) : (
             <>
               <Ionicons name="refresh" size={20} color={colors.accent} style={{ marginRight: 8 }} />

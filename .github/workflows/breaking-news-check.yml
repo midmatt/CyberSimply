@@ -1,0 +1,113 @@
+# actionlint: disable=expression
+name: Breaking News Check
+
+# Fully decoupled from the daily digest pipeline (Fetch Articles / Summarize
+# Articles). It shares only the `articles` table and never enqueues work for
+# the summarizer.
+on:
+  schedule:
+    - cron: "*/30 * * * *"  # Every 30 minutes
+  workflow_dispatch:
+    inputs:
+      seed_only:
+        description: >-
+          SEED MODE — run this ONCE before enabling the schedule. Records every
+          entry currently in all five feeds as already-seen without classifying
+          or pushing any of them. Without it, CISA's advisory backlog and every
+          other feed's existing entries look brand new on the first real run and
+          fire false breaking pushes.
+        type: boolean
+        default: false
+
+# A long run must not overlap the next tick and double-notify.
+concurrency:
+  group: breaking-news-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+      # Empty on a scheduled run, so seeding can only ever be triggered by hand.
+      BREAKING_SEED_ONLY: ${{ inputs.seed_only }}
+
+    steps:
+      - name: Checkout repository
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          if [ ! -d .git ]; then
+            git init
+            git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+          fi
+          git fetch --depth=1 origin "${GITHUB_SHA}"
+          git checkout --force "${GITHUB_SHA}"
+
+      - name: Setup Node.js 20
+        run: |
+          set -euo pipefail
+          curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+          sudo apt-get install -y nodejs
+
+      - name: Install dependencies
+        run: npm ci --omit=dev
+
+      - name: Check for breaking news
+        run: |
+          set -euo pipefail
+          # Missing secrets are a misconfiguration, not a reason to report green.
+          if [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ] || [ -z "${SUPABASE_URL:-}" ]; then
+            echo "::error::Supabase secrets are not set."
+            exit 1
+          fi
+
+          if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "::error::ANTHROPIC_API_KEY is not set."
+            exit 1
+          fi
+
+          # The feeds need no credentials, so there is no key check here. The
+          # feeds themselves are read-only public URLs; a single one failing is
+          # logged and skipped inside the script.
+          if [ "${BREAKING_SEED_ONLY:-}" = "true" ]; then
+            echo "::notice::Seed mode — recording current feed entries as seen, no classification or pushes."
+          fi
+
+          node breaking-news-check.mjs
+
+      - name: Alert on failure
+        if: failure()
+        run: |
+          set -euo pipefail
+          echo "### ❌ Breaking News Check failed" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -z "${ALERT_WEBHOOK_URL:-}" ]; then
+            echo "No ALERT_WEBHOOK_URL secret set; skipping webhook notification."
+            exit 0
+          fi
+
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          MSG="🚨 CyberSimply: '${GITHUB_WORKFLOW}' failed. Breaking news may be going undetected. ${RUN_URL}"
+          echo "Alert message: ${MSG}"
+
+          # 'text' is Slack's field, 'content' is Discord's; each ignores the
+          # other, so one secret works with either provider. Capturing the
+          # status matters because a bare `curl -sS` exits 0 even when the
+          # provider rejects the payload.
+          HTTP_CODE=$(jq -n --arg m "$MSG" '{text: $m, content: $m}' \
+            | curl -sS -o /tmp/alert-response.txt -w '%{http_code}' \
+                -X POST -H 'Content-Type: application/json' -d @- "$ALERT_WEBHOOK_URL")
+
+          echo "Webhook HTTP status: ${HTTP_CODE}"
+          if [ "${HTTP_CODE}" -lt 200 ] || [ "${HTTP_CODE}" -ge 300 ]; then
+            echo "::error::Alert webhook rejected the message (HTTP ${HTTP_CODE})"
+            cat /tmp/alert-response.txt || true
+          else
+            echo "✅ Alert delivered (HTTP ${HTTP_CODE})."
+          fi

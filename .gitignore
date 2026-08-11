@@ -18,6 +18,15 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
+# Local Gradle user home used for SSD builds
+.gradle-home/
+
+# Local Android SDK (machine-specific; not committed)
+.android-sdk/
+
+# Local Android NDK (machine-specific; not committed)
+.android-ndk/
+
 # Metro
 .metro-health-check*
 
@@ -29,6 +38,12 @@ yarn-error.*
 # macOS
 .DS_Store
 *.pem
+# AppleDouble sidecars: macOS writes one per file on exFAT volumes, so they
+# appear en masse when the repo lives on an external drive.
+._*
+
+# Local archive snapshots
+*.tar.gz
 
 # local env files
 .env*.local

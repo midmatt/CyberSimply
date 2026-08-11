@@ -1,4 +1,5 @@
 import { ProcessedArticle } from '../services/newsService';
+import type { ArticleCategoryMeta } from '../utils/articleCategory';
 
 export interface Article {
   id: string;
@@ -88,15 +89,8 @@ export interface DailyDigest {
 export type RootStackParamList = {
   Auth: undefined;
   Main: undefined;
-  CategoryArticles: { 
-    category: {
-      id: ArticleCategory;
-      name: string;
-      description: string;
-      icon: string;
-      color: string;
-      articleCount: number;
-    };
+  CategoryArticles: {
+    category: ArticleCategoryMeta;
   };
   Support: undefined;
   AdFree: undefined;

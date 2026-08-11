@@ -16,8 +16,9 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Article } from '../types';
 import { ProcessedArticle } from '../services/newsService';
 import { useTheme } from '../context/ThemeContext';
+import { useNews } from '../context/NewsContext';
 import { TYPOGRAPHY, SPACING, BORDER_RADIUS, SHADOWS } from '../constants';
-import { formatTextForDisplay } from '../utils/textUtils';
+import { formatTextForDisplay, cleanSummaryText } from '../utils/textUtils';
 import { RootStackParamList } from '../types';
 import { AdBanner } from './AdBanner';
 import { ExpandableSummary } from './ExpandableSummary';
@@ -29,7 +30,12 @@ export function ArticleDetail() {
   const navigation = useNavigation();
   const route = useRoute();
   const { colors } = useTheme();
-  const { article, isFavorite = false } = route.params;
+  const { article } = route.params;
+  // Read from the shared store rather than the route param, so the star stays in
+  // sync with the list rows and Favorites tab instead of freezing at whatever
+  // the value was when this screen was pushed.
+  const { favorites, toggleFavorite } = useNews();
+  const isFavorite = favorites.includes(article.id);
 
   // Create styles with access to colors
   const styles = StyleSheet.create({
@@ -57,6 +63,10 @@ export function ArticleDetail() {
     backButton: {
       padding: SPACING.xs,
     },
+    favoriteButton: {
+      padding: SPACING.xs,
+      marginRight: SPACING.xs,
+    },
     shareButton: {
       padding: SPACING.xs,
     },
@@ -64,12 +74,18 @@ export function ArticleDetail() {
       padding: SPACING.md,
       paddingBottom: SPACING.xl,
     },
-    image: {
+    // The box lives on the wrapper so it actually clips; putting the radius on
+    // the Image alone left the corners square and the wrapper unsized.
+    imageBox: {
       width: '100%',
-      height: 200,
+      aspectRatio: 16 / 9,
       borderRadius: BORDER_RADIUS.md,
       marginBottom: SPACING.md,
-      resizeMode: 'cover',
+      backgroundColor: colors.surface,
+    },
+    image: {
+      width: '100%',
+      height: '100%',
     },
     title: {
       ...TYPOGRAPHY.h2,
@@ -234,50 +250,24 @@ export function ArticleDetail() {
     navigation.goBack();
   };
 
-  // Format author name function (same as in NewsCard)
-  const formatAuthorName = (author: string | null, source: string) => {
-    if (author && author.trim()) {
-      // Clean up author name - remove common prefixes and suffixes
-      let cleanAuthor = author.trim();
-      
-      // Remove common prefixes
-      cleanAuthor = cleanAuthor.replace(/^(By|by|By:|by:)\s*/i, '');
-      
-      // Remove common suffixes
-      cleanAuthor = cleanAuthor.replace(/\s*(,.*|\(.*\)|\[.*\]).*$/, '');
-      
-      // If author is too long, truncate it
-      if (cleanAuthor.length > 50) {
-        cleanAuthor = cleanAuthor.substring(0, 47) + '...';
-      }
-      
-      return cleanAuthor;
-    }
-    
-    // If no author, use source domain name
-    try {
-      const url = new URL(source.includes('http') ? source : `https://${source}`);
-      const domain = url.hostname.replace('www.', '');
-      
-      // Convert domain to a more readable format
-      const domainParts = domain.split('.');
-      if (domainParts.length >= 2) {
-        const siteName = domainParts[0];
-        return siteName.charAt(0).toUpperCase() + siteName.slice(1);
-      }
-      
-      return domain;
-    } catch {
-      // If URL parsing fails, just use the source as is
-      return source;
-    }
-  };
+  /*
+   * NOTE: a local `formatAuthorName` helper was removed here. It was never
+   * called — the byline renders `article.authorDisplay` directly — and it
+   * clipped names to a 47-character budget, the same pattern already dropped
+   * from NewsCard. Cap the byline with `numberOfLines` on the Text instead.
+   */
 
   // Determine if this is a ProcessedArticle or Article
   const isProcessedArticle = 'what' in article && 'impact' in article && 'takeaways' in article;
   
-  // Get the appropriate content
-  const content = isProcessedArticle ? article.summary : (article as Article).content;
+  // Get the appropriate content. The provider snippet arrives clipped and with
+  // feed artifacts baked in, so repair it; if that leaves nothing usable, fall
+  // back to the AI text, which is always written as complete sentences.
+  const providerSummary = isProcessedArticle
+    ? cleanSummaryText(article.summary, article.title)
+    : (article as Article).content;
+  const content =
+    providerSummary || (isProcessedArticle ? (article as ProcessedArticle).what : '');
   const whyThisMatters = isProcessedArticle 
     ? (article as ProcessedArticle).whyThisMatters
     : (article as Article).whyItMatters?.[0] || '';
@@ -330,6 +320,19 @@ export function ArticleDetail() {
           <Ionicons name="arrow-back" size={28} color={colors.textPrimary} />
         </TouchableOpacity>
         <View style={styles.headerRight}>
+          <TouchableOpacity
+            onPress={() => toggleFavorite(article.id)}
+            style={styles.favoriteButton}
+            accessibilityRole="button"
+            accessibilityLabel={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+          >
+            <Ionicons
+              name={isFavorite ? 'star' : 'star-outline'}
+              size={26}
+              color={isFavorite ? '#FFD700' : colors.textPrimary}
+            />
+          </TouchableOpacity>
+
           <TouchableOpacity onPress={handleShare} style={styles.shareButton}>
             <Ionicons name="share-outline" size={28} color={colors.textPrimary} />
           </TouchableOpacity>
@@ -341,15 +344,17 @@ export function ArticleDetail() {
         {article.imageUrl && article.imageUrl.trim() !== '' && (
           <ArticleImage
             imageUrl={article.imageUrl}
+            containerStyle={styles.imageBox}
             style={styles.image}
+            resizeMode="cover"
             showPlaceholder={false}
           />
         )}
 
         <Text style={styles.title}>{formatTextForDisplay(article.title)}</Text>
         
-        {/* Show authorDisplay at the top */}
-        <Text style={styles.authorText}>
+        {/* Length is capped by the measured width, not a character budget. */}
+        <Text style={styles.authorText} numberOfLines={1} ellipsizeMode="tail">
           {article.authorDisplay} (simplified with AI)
         </Text>
         

@@ -45,7 +45,28 @@ export default function App() {
 
   useEffect(() => {
     let isMounted = true;
+    let didRevealApp = false;
     const splashScreen = new SafeSplashScreen();
+    let watchdogTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const revealApp = async (reason: 'basic-ready' | 'watchdog' | 'error') => {
+      if (!isMounted || didRevealApp) return;
+      didRevealApp = true;
+      if (watchdogTimeout) {
+        clearTimeout(watchdogTimeout);
+        watchdogTimeout = null;
+      }
+      try {
+        await splashScreen.hide();
+      } catch (hideError) {
+        console.warn('Failed to hide splash screen:', hideError);
+      }
+      if (reason === 'watchdog') {
+        // Only warn if we truly never made it past basic init.
+        console.warn('⚠️ [App] Watchdog timeout - forcing app to load');
+      }
+      setInitialized();
+    };
 
     async function initializeApp() {
       try {
@@ -68,31 +89,32 @@ export default function App() {
         
         if (!isMounted) return;
         
-        // Hide splash screen as soon as basic steps are done
+        // Reveal UI as soon as basics are done. Clear the watchdog here —
+        // heavy steps (IAP, etc.) continue in the background and must not
+        // trip a false "forcing app to load" warning.
         updateProgress('Preparing interface...');
-        await orchestrator.hideSplashScreen();
+        await revealApp('basic-ready');
         
         if (!isMounted) return;
         
-        // Mark as initialized for first render
-        setInitialized();
-        
         // Continue with service initialization in background
         updateProgress('Loading services...');
+        const serviceOrchestrator = new StartupOrchestrator();
         const serviceSteps = createServiceStartupSteps();
-        serviceSteps.forEach(step => orchestrator.addStep(step));
+        serviceSteps.forEach(step => serviceOrchestrator.addStep(step));
         
-        const serviceResult = await orchestrator.execute();
+        const serviceResult = await serviceOrchestrator.execute();
         console.log('🚀 [App] Service initialization result:', serviceResult);
         
         if (!isMounted) return;
         
         // Continue with heavy initialization in background
         updateProgress('Loading additional features...');
+        const heavyOrchestrator = new StartupOrchestrator();
         const heavySteps = createHeavyStartupSteps();
-        heavySteps.forEach(step => orchestrator.addStep(step));
+        heavySteps.forEach(step => heavyOrchestrator.addStep(step));
         
-        const heavyResult = await orchestrator.execute();
+        const heavyResult = await heavyOrchestrator.execute();
         console.log('🚀 [App] Heavy initialization result:', heavyResult);
         
         console.log('🎉 [App] All initialization completed');
@@ -101,14 +123,9 @@ export default function App() {
         console.error('❌ [App] Initialization error:', error);
         
         if (isMounted) {
-          // Even if initialization fails, show the app
-          try {
-            await splashScreen.hide();
-          } catch (hideError) {
-            console.warn('Failed to hide splash screen:', hideError);
-          }
+          await revealApp('error');
           
-          // Set a more user-friendly error message
+          // Set a more user-friendly error message (non-blocking — app still shows)
           const errorMessage = error instanceof Error 
             ? `Initialization failed: ${error.message}` 
             : 'Initialization failed. The app will continue with limited functionality.';
@@ -118,24 +135,16 @@ export default function App() {
       }
     }
 
-    // Set up watchdog timeout
-    const watchdogTimeout = setTimeout(() => {
-      console.warn('⚠️ [App] Watchdog timeout - forcing app to load');
-      if (isMounted) {
-        splashScreen.hide().then(() => {
-          setInitialized();
-        });
-      }
-    }, 4000); // 4 second watchdog
+    // Watchdog only covers the critical path before first paint.
+    watchdogTimeout = setTimeout(() => {
+      void revealApp('watchdog');
+    }, 4000);
 
-    // Start initialization
-    initializeApp().finally(() => {
-      clearTimeout(watchdogTimeout);
-    });
+    void initializeApp();
 
     return () => {
       isMounted = false;
-      clearTimeout(watchdogTimeout);
+      if (watchdogTimeout) clearTimeout(watchdogTimeout);
     };
   }, [updateProgress, setError, setInitialized]);
 

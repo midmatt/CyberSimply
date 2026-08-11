@@ -14,14 +14,16 @@
     "preview": {
       "distribution": "internal",
       "ios": {
-        "simulator": false
+        "simulator": false,
+        "image": "macos-sequoia-15.6-xcode-26.2"
       }
     },
     "production": {
       "autoIncrement": true,
       "ios": {
         "simulator": false,
-        "buildConfiguration": "Release"
+        "buildConfiguration": "Release",
+        "image": "macos-sequoia-15.6-xcode-26.2"
       },
       "android": {
         "buildType": "apk"
@@ -31,22 +33,30 @@
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVheWtyeGZoemZraGp3bm12dWtiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc1MjI1ODMsImV4cCI6MjA3MzA5ODU4M30.V4cd5JiLwAgjNUk-VTBicIp52PuH2FAp_UsZMRPlR40",
         "EXPO_PUBLIC_NEWS_API_KEY": "your_newsapi_key_here",
         "EXPO_PUBLIC_ADMOB_APP_ID_IOS": "ca-app-pub-1846982089045102~4493578427",
-        "EXPO_PUBLIC_ADMOB_APP_ID_ANDROID": "ca-app-pub-1846982089045102~4493578427"
+        "EXPO_PUBLIC_ADMOB_APP_ID_ANDROID": "ca-app-pub-1846982089045102~4493578427",
+        "EXPO_PUBLIC_ADMOB_BANNER_UNIT_ID": "ca-app-pub-1846982089045102/9874666491",
+        "EXPO_PUBLIC_ADMOB_INTERSTITIAL_UNIT_ID": "ca-app-pub-1846982089045102/7248503155",
+        "EXPO_PUBLIC_ADMOB_REWARDED_UNIT_ID": "ca-app-pub-1846982089045102/3585398116"
       }
     },
     "testflight": {
       "distribution": "store",
       "ios": {
         "simulator": false,
-        "buildConfiguration": "Release"
+        "buildConfiguration": "Release",
+        "image": "macos-sequoia-15.6-xcode-26.2"
       },
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://uaykrxfhzfkhjwnmvukb.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVheWtyeGZoemZraGp3bm12dWtiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc1MjI1ODMsImV4cCI6MjA3MzA5ODU4M30.V4cd5JiLwAgjNUk-VTBicIp52PuH2FAp_UsZMRPlR40",
         "EXPO_PUBLIC_NEWS_API_KEY": "your_newsapi_key_here",
         "EXPO_PUBLIC_ADMOB_APP_ID_IOS": "ca-app-pub-1846982089045102~4493578427",
-        "EXPO_PUBLIC_ADMOB_APP_ID_ANDROID": "ca-app-pub-1846982089045102~4493578427"
-      }
+        "EXPO_PUBLIC_ADMOB_APP_ID_ANDROID": "ca-app-pub-1846982089045102~4493578427",
+        "EXPO_PUBLIC_ADMOB_BANNER_UNIT_ID": "ca-app-pub-1846982089045102/9874666491",
+        "EXPO_PUBLIC_ADMOB_INTERSTITIAL_UNIT_ID": "ca-app-pub-1846982089045102/7248503155",
+        "EXPO_PUBLIC_ADMOB_REWARDED_UNIT_ID": "ca-app-pub-1846982089045102/3585398116"
+      },
+      "autoIncrement": true
     }
   },
   "submit": {

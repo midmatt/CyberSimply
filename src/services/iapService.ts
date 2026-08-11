@@ -18,6 +18,7 @@ import { Platform } from 'react-native';
 import { supabase } from './supabaseClientProduction';
 import * as RNIap from 'react-native-iap';
 import { localStorageService } from './localStorageService';
+import * as Device from 'expo-device';
 
 // Type definitions for react-native-iap
 interface Product {
@@ -55,6 +56,28 @@ export const PRODUCT_IDS = {
 
 // Debug mode - set to true to disable automatic purchase checking
 const DEBUG_MODE = __DEV__; // Only enable in development
+
+/** How long to wait for StoreKit/Play Billing before falling back. */
+const IAP_CONNECTION_TIMEOUT_MS = 2000;
+
+function isIapUnavailableError(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : String(error ?? '');
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? String((error as { code?: string }).code ?? '')
+      : '';
+  return (
+    code === 'E_IAP_NOT_AVAILABLE' ||
+    message.includes('E_IAP_NOT_AVAILABLE') ||
+    message.includes('IAP_NOT_AVAILABLE') ||
+    message.includes('IAP connection timeout')
+  );
+}
 
 export interface IAPProduct {
   productId: string;
@@ -97,7 +120,9 @@ export class IAPService {
   }
 
   /**
-   * Initialize the IAP service with StoreKit 2
+   * Initialize the IAP service with StoreKit 2.
+   * On simulator / when StoreKit is unavailable, fails fast with fallback
+   * products and does NOT raise LogBox errors (expected in dev).
    */
   public async initialize(): Promise<{ success: boolean; error?: string }> {
     if (this.isInitialized) {
@@ -105,11 +130,29 @@ export class IAPService {
       return { success: true };
     }
 
+    // Simulator cannot talk to StoreKit — skip the hang and use fallbacks.
+    if (Platform.OS === 'ios' && !Device.isDevice) {
+      if (__DEV__) {
+        console.log('ℹ️ [IAP] Skipping StoreKit on simulator — using fallback products');
+      }
+      this.products = this.getFallbackProducts();
+      this.isInitialized = true;
+      return { success: true, error: 'E_IAP_NOT_AVAILABLE' };
+    }
+
     try {
       console.log('🛒 [IAP] Initializing StoreKit 2...');
 
-      // Step 1: Initialize connection to App Store
-      await (RNIap as any).initConnection();
+      // Step 1: Initialize connection to App Store (bounded — can hang when unavailable)
+      await Promise.race([
+        (RNIap as any).initConnection(),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error('IAP connection timeout')),
+            IAP_CONNECTION_TIMEOUT_MS
+          )
+        ),
+      ]);
       console.log(`✅ [IAP] Connection initialized`);
 
       // Step 2: Set up purchase listeners
@@ -118,9 +161,13 @@ export class IAPService {
       // Step 3: Fetch products
       await this.fetchProducts();
 
-      // Step 4: Clear old transactions (iOS requirement)
-      if (Platform.OS === 'ios') {
-        await (RNIap as any).flushFailedPurchasesCachedAsPendingAndroid();
+      // Step 4: Clear old transactions (Android API — no-op / safe skip on iOS)
+      if (Platform.OS === 'android') {
+        try {
+          await (RNIap as any).flushFailedPurchasesCachedAsPendingAndroid();
+        } catch {
+          // Non-fatal
+        }
       }
 
       this.isInitialized = true;
@@ -128,26 +175,28 @@ export class IAPService {
       return { success: true };
 
     } catch (error) {
-      console.error('❌ [IAP] Initialization failed:', error);
-      
-      // Provide helpful error message for common issues
-      let errorMessage = 'Initialization failed';
-      if (error instanceof Error) {
-        if (error.message.includes('E_IAP_NOT_AVAILABLE')) {
-          errorMessage = 'IAP not available. Please sign in with a sandbox tester account in Settings → App Store → Sandbox Account';
-        } else {
-          errorMessage = error.message;
+      const unavailable = isIapUnavailableError(error);
+      const errorMessage = unavailable
+        ? 'IAP not available on this device/session'
+        : error instanceof Error
+          ? error.message
+          : 'Initialization failed';
+
+      // Expected on simulator / unsigned builds — never paint a red LogBox.
+      if (unavailable) {
+        if (__DEV__) {
+          console.log('ℹ️ [IAP] StoreKit unavailable — using fallback products:', errorMessage);
         }
+      } else {
+        console.warn('⚠️ [IAP] Initialization failed, using fallback products:', errorMessage);
       }
-      
-      // CRITICAL FIX: Always provide fallback products so buttons show up
-      console.log('🔄 [IAP] Using fallback products due to initialization failure');
+
       this.products = this.getFallbackProducts();
-      this.isInitialized = true; // Mark as initialized so UI can work
-      
-      return { 
-        success: true, // Return success so UI shows buttons
-        error: errorMessage // But include error for debugging
+      this.isInitialized = true;
+
+      return {
+        success: true,
+        error: errorMessage,
       };
     }
   }

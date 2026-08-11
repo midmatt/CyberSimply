@@ -43,7 +43,9 @@ export class StartupOrchestrator {
         const result = await withTimeout(
           step.execute(),
           step.timeout,
-          step.name
+          step.name,
+          // Non-critical steps (IAP on simulator, ads, etc.) must not paint LogBox.
+          { quiet: !step.critical }
         );
         
         const duration = Date.now() - stepStartTime;
@@ -185,13 +187,13 @@ export const createHeavyStartupSteps = (): StartupStep[] => [
   {
     name: 'iap-service',
     critical: false,
-    timeout: 5000,
+    // Keep short: StoreKit is unavailable on simulator and can hang otherwise.
+    timeout: 2500,
     execute: async () => {
-      // IAP service initialization (non-blocking)
       const { iapService } = await import('../../services/iapService');
       const result = await iapService.initialize();
-      if (!result.success) {
-        console.warn('⚠️ [Startup] IAP service initialization failed:', result.error);
+      if (!result.success && __DEV__) {
+        console.log('ℹ️ [Startup] IAP unavailable (non-critical):', result.error);
       }
       return { initialized: result.success, error: result.error };
     }
@@ -199,11 +201,16 @@ export const createHeavyStartupSteps = (): StartupStep[] => [
   {
     name: 'ad-service',
     critical: false,
-    timeout: 3000,
+    timeout: 8000,
     execute: async () => {
-      // Ad service initialization (non-blocking)
-      await new Promise(resolve => setTimeout(resolve, 200));
-      return { initialized: true };
+      try {
+        const { adService } = await import('../../services/adService');
+        await adService.initialize();
+        return { initialized: true };
+      } catch (error) {
+        console.warn('ℹ️ [Startup] AdMob init failed (non-critical):', error);
+        return { initialized: false, error: 'AdMob init failed' };
+      }
     }
   },
   {

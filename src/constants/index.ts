@@ -19,6 +19,13 @@ export const COLORS = {
     accent: '#ff7613',
     surface: '#f5f5f5',
     white: '#ffffff',
+    // Category tags. Tuned for >=4.5:1 on a white/near-white surface.
+    categoryBreach: '#C62A2F',
+    categoryPhishing: '#B4341F',
+    categoryAdvisory: '#96590A',
+    categoryPolicy: '#0B7268',
+    categoryPatch: '#2F4BA6',
+    categoryNeutral: '#5A5A5A',
   },
   // Dark mode colors
   dark: {
@@ -38,6 +45,13 @@ export const COLORS = {
     accent: '#ff8a3d',
     surface: '#1e1e1e',
     white: '#ffffff',
+    // Lifted variants so tags stay legible on #1e1e1e cards.
+    categoryBreach: '#FF6369',
+    categoryPhishing: '#FF8A65',
+    categoryAdvisory: '#FFB224',
+    categoryPolicy: '#2EC4B0',
+    categoryPatch: '#8DA4FF',
+    categoryNeutral: '#B0B0B0',
   },
 };
 

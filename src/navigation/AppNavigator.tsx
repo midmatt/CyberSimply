@@ -3,9 +3,10 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
-import { View, Text, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ResponsiveLayout } from '../layouts/ResponsiveLayout';
+import { AppLoadingScreen } from '../components/AppLoadingScreen';
 import { NewsListScreen } from '../screens/NewsListScreen';
 import { CategoriesScreen } from '../screens/CategoriesScreen';
 import { CategoryArticlesScreen } from '../screens/CategoryArticlesScreen';
@@ -84,10 +85,7 @@ function MainTabNavigator() {
   if (!themeContext || !themeContext.colors || !themeContext.colors.background) {
     console.log("🎨 Theme not ready, showing loading screen");
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#ffffff', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={{ marginTop: 16, fontSize: 16, color: '#333333' }}>Loading theme...</Text>
-      </SafeAreaView>
+      <AppLoadingScreen />
     );
   }
 
@@ -233,14 +231,7 @@ export default function AppNavigator() {
           }}
         >
           <Stack.Navigator screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="Loading">
-              {() => (
-                <SafeAreaView style={{ flex: 1, backgroundColor: '#ffffff', justifyContent: 'center', alignItems: 'center' }}>
-                  <ActivityIndicator size="large" color="#007AFF" />
-                  <Text style={{ marginTop: 16, fontSize: 16, color: '#333333' }}>Loading...</Text>
-                </SafeAreaView>
-              )}
-            </Stack.Screen>
+            <Stack.Screen name="Loading">{() => <AppLoadingScreen />}</Stack.Screen>
           </Stack.Navigator>
         </NavigationContainer>
       );

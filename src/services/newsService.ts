@@ -26,6 +26,11 @@ export interface ProcessedArticle {
   impact: string;
   takeaways: string;
   whyThisMatters: string;
+  // Breaking-news flags. Optional so the many places that build a
+  // ProcessedArticle by hand keep compiling.
+  isBreaking?: boolean;
+  breakingCategory?: string | null;
+  breakingTaggedAt?: string | null;
 }
 
 export interface NewsResponse {
