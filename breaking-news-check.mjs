@@ -621,10 +621,11 @@ const CLASSIFICATION_SCHEMA = {
         '(e.g. "Okta", "AT&T", "Fortinet FortiOS"). Use "unknown" if the article names none.',
     },
     confidence: {
+      // Anthropic structured schemas reject integer minimum/maximum; enum is
+      // the supported way to constrain the 1–5 rubric.
       type: 'integer',
-      description:
-        'Certainty that this meets the breaking bar, as an integer from 1 to 5. ' +
-        '5 = unambiguous.',
+      enum: [1, 2, 3, 4, 5],
+      description: 'Certainty that this meets the breaking bar. 5 = unambiguous.',
     },
     one_line_summary: {
       type: 'string',
@@ -641,6 +642,15 @@ const CLASSIFICATION_SCHEMA = {
     'one_line_summary',
   ],
   additionalProperties: false,
+};
+
+/** Forced tool — more reliable than output_config for this Haiku classifier path. */
+const CLASSIFY_TOOL = {
+  name: 'classify_breaking_news',
+  description:
+    'Record the severity classification for a cybersecurity news article against the rubric.',
+  strict: true,
+  input_schema: CLASSIFICATION_SCHEMA,
 };
 
 const CLASSIFIER_SYSTEM_PROMPT = `
@@ -709,20 +719,21 @@ Published: ${article.published_at}${corroborationContext}
     temperature: 0,
     system: CLASSIFIER_SYSTEM_PROMPT,
     messages: [{ role: 'user', content: prompt }],
-    output_config: { format: { type: 'json_schema', schema: CLASSIFICATION_SCHEMA } },
+    tools: [CLASSIFY_TOOL],
+    tool_choice: { type: 'tool', name: CLASSIFY_TOOL.name },
   });
 
   if (response.stop_reason === 'refusal') {
     throw new Error('model refused to classify this article');
   }
   if (response.stop_reason === 'max_tokens') {
-    throw new Error('response truncated at max_tokens; JSON is incomplete');
+    throw new Error('response truncated at max_tokens; tool input is incomplete');
   }
 
-  const block = response.content.find((part) => part.type === 'text');
-  if (!block) throw new Error('no text block in classifier response');
+  const block = response.content.find((part) => part.type === 'tool_use');
+  if (!block) throw new Error('no tool_use block in classifier response');
 
-  return JSON.parse(block.text);
+  return block.input;
 }
 
 /** The push bar. Kept as one function so the threshold is easy to tune. */
@@ -973,6 +984,13 @@ async function main() {
       } catch (err) {
         classifyErrors++;
         console.error(`   ❌ Classification failed for "${article.title}": ${err.message}`);
+        // Schema / request shape bugs fail identically for every article — stop
+        // after the first rather than burning the whole classification budget.
+        if (/input_schema|output_config\.format\.schema/i.test(err.message)) {
+          throw new Error(
+            `Classifier request rejected by Anthropic (not retrying remaining articles): ${err.message}`,
+          );
+        }
         continue;
       } finally {
         // Throttle every call, not just the ones that qualify — a busy window can
