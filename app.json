@@ -36,10 +36,7 @@
         "NSMicrophoneUsageDescription": "This app may access your microphone for voice-based security features.",
         "NSPhotoLibraryUsageDescription": "This app may access your photo library to save security-related images or documents."
       },
-      "bundleIdentifier": "com.cybersimply.app",
-      "associatedDomains": [
-        "applinks:cybersimply.com"
-      ]
+      "bundleIdentifier": "com.cybersimply.app"
     },
     "android": {
       "icon": "./assets/icons/ios-light.png",
