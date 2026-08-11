@@ -24,6 +24,7 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useTheme } from '../context/ThemeContext';
 import { useSupabase } from '../context/SupabaseContext';
 import { RootStackParamList } from '../types';
+import { navigationRef } from './navigationRef';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -286,6 +287,7 @@ export default function AppNavigator() {
   return (
     <ErrorBoundary>
       <NavigationContainer
+        ref={navigationRef}
         onReady={() => {
           console.log('NavigationContainer mounted ✅');
         }}

@@ -96,9 +96,10 @@ export type RootStackParamList = {
   AdFree: undefined;
   NotificationSettings: undefined;
   Profile: undefined;
-  ArticleDetail: { 
-    article: ProcessedArticle; 
-    isFavorite: boolean; 
+  ArticleDetail: {
+    article?: ProcessedArticle;
+    articleId?: string;
+    isFavorite?: boolean;
   };
 };
 

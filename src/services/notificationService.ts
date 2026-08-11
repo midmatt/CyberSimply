@@ -2,6 +2,11 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
+import { supabase } from './supabaseClient';
+import { TABLES } from '../constants/supabaseConfig';
+import { navigationRef } from '../navigation/navigationRef';
+import type { RootStackParamList } from '../types';
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -14,16 +19,32 @@ Notifications.setNotificationHandler({
   }),
 });
 
+const BREAKING_NEWS_PREF_KEY = 'breakingNewsEnabled';
+const PUSH_TOKEN_KEY = 'pushToken';
+
+const EAS_PROJECT_ID =
+  Constants.expoConfig?.extra?.eas?.projectId ??
+  Constants.easConfig?.projectId ??
+  '526c8a77-d747-4a06-a867-9d472d683675';
+
 export interface NotificationSettings {
   enabled: boolean;
   time: string; // Format: "HH:MM" (24-hour)
   timezone: string;
+  breakingNewsEnabled: boolean;
 }
+
+type NotificationData = {
+  type?: string;
+  articleId?: string;
+  screen?: string;
+};
 
 export class NotificationService {
   private static instance: NotificationService;
-  private notificationListener: any = null;
-  private responseListener: any = null;
+  private notificationListener: Notifications.Subscription | null = null;
+  private responseListener: Notifications.Subscription | null = null;
+  private handledColdStart = false;
 
   private constructor() {
     this.setupNotificationListeners();
@@ -37,16 +58,15 @@ export class NotificationService {
   }
 
   /**
-   * Initialize the notification service
+   * Initialize permissions, register the Expo token with Supabase, and handle
+   * a cold-start notification tap that opened the app.
    */
   public async initialize(): Promise<{ success: boolean; error?: string }> {
     try {
-      // Check if device supports notifications
       if (!Device.isDevice) {
         return { success: false, error: 'Push notifications are not supported on simulators' };
       }
 
-      // Request notification permissions
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
 
@@ -59,13 +79,15 @@ export class NotificationService {
         return { success: false, error: 'Notification permissions not granted' };
       }
 
-      // Get push token
       const token = await this.getPushToken();
       if (token) {
         console.log('Push notification token:', token);
-        // Store token for server use if needed
-        await AsyncStorage.setItem('pushToken', token);
+        await AsyncStorage.setItem(PUSH_TOKEN_KEY, token);
+        const breakingNewsEnabled = await this.isBreakingNewsEnabled();
+        await this.registerTokenWithSupabase(token, breakingNewsEnabled);
       }
+
+      await this.handleColdStartResponse();
 
       return { success: true };
     } catch (error) {
@@ -74,9 +96,6 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Get push notification token
-   */
   private async getPushToken(): Promise<string | null> {
     try {
       if (Platform.OS === 'android') {
@@ -88,40 +107,106 @@ export class NotificationService {
         });
       }
 
-      const token = await Notifications.getExpoPushTokenAsync();
+      const pushToken = await Notifications.getExpoPushTokenAsync({
+        projectId: EAS_PROJECT_ID,
+      });
 
-      return token;
+      return typeof pushToken === 'string' ? pushToken : pushToken.data;
     } catch (error) {
       console.error('Error getting push token:', error);
       return null;
     }
   }
 
-  /**
-   * Schedule daily news notification
-   */
-  public async scheduleDailyNotification(time: string = '09:00'): Promise<{ success: boolean; error?: string }> {
+  private async registerTokenWithSupabase(
+    token: string,
+    breakingNewsEnabled: boolean,
+  ): Promise<void> {
     try {
-      // Cancel existing daily notifications
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      const row = {
+        token,
+        platform: Platform.OS,
+        is_active: true,
+        breaking_news: breakingNewsEnabled,
+        user_id: user?.id ?? null,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from(TABLES.NOTIFICATION_TOKENS)
+        .upsert(row, { onConflict: 'token' });
+
+      if (error) {
+        console.error('Failed to register push token:', error.message);
+      }
+    } catch (error) {
+      console.error('Failed to register push token:', error);
+    }
+  }
+
+  public async isBreakingNewsEnabled(): Promise<boolean> {
+    try {
+      const stored = await AsyncStorage.getItem(BREAKING_NEWS_PREF_KEY);
+      if (stored === null) return true;
+      return stored === 'true';
+    } catch {
+      return true;
+    }
+  }
+
+  /**
+   * Opt this device in/out of remote breaking-news pushes.
+   */
+  public async setBreakingNewsEnabled(
+    enabled: boolean,
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      await AsyncStorage.setItem(BREAKING_NEWS_PREF_KEY, enabled ? 'true' : 'false');
+
+      const token =
+        (await AsyncStorage.getItem(PUSH_TOKEN_KEY)) || (await this.getPushToken());
+
+      if (!token) {
+        return {
+          success: false,
+          error: 'No push token available. Enable notification permission first.',
+        };
+      }
+
+      await AsyncStorage.setItem(PUSH_TOKEN_KEY, token);
+      await this.registerTokenWithSupabase(token, enabled);
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating breaking news preference:', error);
+      return { success: false, error: 'Failed to update breaking news preference' };
+    }
+  }
+
+  public async scheduleDailyNotification(
+    time: string = '09:00',
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
       await this.cancelDailyNotifications();
 
-      // Parse time (format: "HH:MM")
       const [hours, minutes] = time.split(':').map(Number);
-      
-      // Create trigger for daily notification
+
       const trigger: Notifications.DailyTriggerInput = {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
         hour: hours,
         minute: minutes,
       };
 
-      // Schedule the notification
       await Notifications.scheduleNotificationAsync({
         content: {
-          title: '📰 Your Daily Cybersecurity News',
-          body: 'Stay updated with the latest cybersecurity insights and threats. Tap to read today\'s top stories!',
-          data: { 
+          title: 'Your Daily Cybersecurity News',
+          body: "Stay updated with the latest cybersecurity insights and threats. Tap to read today's top stories!",
+          data: {
             type: 'daily_news',
-            screen: 'HomeScreen'
+            screen: 'HomeScreen',
           },
           sound: 'default',
         },
@@ -129,8 +214,9 @@ export class NotificationService {
         identifier: 'daily-news-notification',
       });
 
-      // Save notification settings
+      const current = await this.getNotificationSettings();
       const settings: NotificationSettings = {
+        ...current,
         enabled: true,
         time,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -145,9 +231,6 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Cancel daily notifications
-   */
   public async cancelDailyNotifications(): Promise<void> {
     try {
       await Notifications.cancelScheduledNotificationAsync('daily-news-notification');
@@ -157,38 +240,50 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Get notification settings
-   */
   public async getNotificationSettings(): Promise<NotificationSettings> {
+    const breakingNewsEnabled = await this.isBreakingNewsEnabled();
+
     try {
       const settings = await AsyncStorage.getItem('notificationSettings');
       if (settings) {
-        return JSON.parse(settings);
+        return {
+          ...JSON.parse(settings),
+          breakingNewsEnabled,
+        };
       }
     } catch (error) {
       console.error('Error getting notification settings:', error);
     }
 
-    // Return default settings
     return {
       enabled: false,
       time: '09:00',
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      breakingNewsEnabled,
     };
   }
 
-  /**
-   * Update notification settings
-   */
-  public async updateNotificationSettings(settings: Partial<NotificationSettings>): Promise<{ success: boolean; error?: string }> {
+  public async updateNotificationSettings(
+    settings: Partial<NotificationSettings>,
+  ): Promise<{ success: boolean; error?: string }> {
     try {
+      if (typeof settings.breakingNewsEnabled === 'boolean') {
+        const breakingResult = await this.setBreakingNewsEnabled(settings.breakingNewsEnabled);
+        if (!breakingResult.success) return breakingResult;
+      }
+
       const currentSettings = await this.getNotificationSettings();
-      const newSettings = { ...currentSettings, ...settings };
-      
+      const newSettings: NotificationSettings = {
+        ...currentSettings,
+        ...settings,
+        breakingNewsEnabled:
+          typeof settings.breakingNewsEnabled === 'boolean'
+            ? settings.breakingNewsEnabled
+            : currentSettings.breakingNewsEnabled,
+      };
+
       await AsyncStorage.setItem('notificationSettings', JSON.stringify(newSettings));
 
-      // If notifications are enabled, reschedule with new time
       if (newSettings.enabled) {
         await this.scheduleDailyNotification(newSettings.time);
       } else {
@@ -202,20 +297,17 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Send immediate test notification
-   */
   public async sendTestNotification(): Promise<{ success: boolean; error?: string }> {
     try {
       await Notifications.scheduleNotificationAsync({
         content: {
-          title: '🔔 Test Notification',
+          title: 'Test Notification',
           body: 'This is a test notification from CyberSimply!',
           data: { type: 'test' },
         },
-        trigger: { 
+        trigger: {
           type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-          seconds: 2 
+          seconds: 2,
         },
       });
 
@@ -226,43 +318,84 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Setup notification listeners
-   */
+  private navigateFromNotificationData(data: NotificationData | undefined): void {
+    if (!data) return;
+
+    if (data.type === 'breaking_news' && data.articleId) {
+      this.navigateWhenReady('ArticleDetail', {
+        articleId: String(data.articleId),
+        isFavorite: false,
+      });
+      return;
+    }
+
+    if (data.screen === 'HomeScreen' || data.type === 'daily_news') {
+      this.navigateWhenReady('Main');
+    }
+  }
+
+  private navigateWhenReady<Name extends keyof RootStackParamList>(
+    name: Name,
+    params?: RootStackParamList[Name],
+  ): void {
+    const tryNavigate = () => {
+      if (!navigationRef.isReady()) return false;
+      // @ts-expect-error React Navigation overload variance on optional params
+      navigationRef.navigate(name, params);
+      return true;
+    };
+
+    if (tryNavigate()) return;
+
+    let attempts = 0;
+    const interval = setInterval(() => {
+      attempts += 1;
+      if (tryNavigate() || attempts >= 40) {
+        clearInterval(interval);
+      }
+    }, 100);
+  }
+
+  private async handleColdStartResponse(): Promise<void> {
+    if (this.handledColdStart) return;
+    this.handledColdStart = true;
+
+    try {
+      const response = await Notifications.getLastNotificationResponseAsync();
+      if (response) {
+        this.navigateFromNotificationData(
+          response.notification.request.content.data as NotificationData,
+        );
+      }
+    } catch (error) {
+      console.error('Error handling cold-start notification:', error);
+    }
+  }
+
   private setupNotificationListeners(): void {
-    // Listen for notifications received while app is running
-    this.notificationListener = Notifications.addNotificationReceivedListener(notification => {
+    this.notificationListener = Notifications.addNotificationReceivedListener((notification) => {
       console.log('Notification received:', notification);
     });
 
-    // Listen for notification responses (when user taps notification)
-    this.responseListener = Notifications.addNotificationResponseReceivedListener(response => {
+    this.responseListener = Notifications.addNotificationResponseReceivedListener((response) => {
       console.log('Notification response:', response);
-      
-      const data = response.notification.request.content.data;
-      if (data?.screen) {
-        // Navigate to specific screen if needed
-        // This would require navigation context
-        console.log('Navigate to:', data.screen);
-      }
+      this.navigateFromNotificationData(
+        response.notification.request.content.data as NotificationData,
+      );
     });
   }
 
-  /**
-   * Clean up listeners
-   */
   public cleanup(): void {
     if (this.notificationListener) {
-      Notifications.removeNotificationSubscription(this.notificationListener);
+      this.notificationListener.remove();
+      this.notificationListener = null;
     }
     if (this.responseListener) {
-      Notifications.removeNotificationSubscription(this.responseListener);
+      this.responseListener.remove();
+      this.responseListener = null;
     }
   }
 
-  /**
-   * Check if notifications are enabled
-   */
   public async areNotificationsEnabled(): Promise<boolean> {
     try {
       const { status } = await Notifications.getPermissionsAsync();
@@ -273,9 +406,6 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Get all scheduled notifications
-   */
   public async getScheduledNotifications(): Promise<Notifications.NotificationRequest[]> {
     try {
       return await Notifications.getAllScheduledNotificationsAsync();
@@ -286,5 +416,4 @@ export class NotificationService {
   }
 }
 
-// Export singleton instance
 export const notificationService = NotificationService.getInstance();

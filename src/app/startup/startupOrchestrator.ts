@@ -216,11 +216,14 @@ export const createHeavyStartupSteps = (): StartupStep[] => [
   {
     name: 'notification-service',
     critical: false,
-    timeout: 3000,
+    timeout: 8000,
     execute: async () => {
-      // Notification service initialization (non-blocking)
-      await new Promise(resolve => setTimeout(resolve, 200));
-      return { initialized: true };
+      const { notificationService } = await import('../../services/notificationService');
+      const result = await notificationService.initialize();
+      if (!result.success) {
+        console.warn('ℹ️ [Startup] Notification init skipped:', result.error);
+      }
+      return { initialized: result.success, error: result.error };
     }
   },
   {
