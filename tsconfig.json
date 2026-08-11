@@ -15,6 +15,12 @@
     "node_modules",
     "ios/build",
     "android/build",
+    // The Next.js app is a separate project with its own tsconfig, path
+    // aliases and React DOM types; compiling it under the React Native
+    // settings here only produces phantom errors.
+    "web",
+    // Dated snapshots of deleted code; their imports no longer resolve.
+    "backups",
     "supabase/functions/**/*",
     "App-*.tsx",
     "testflight-diagnostics.js",

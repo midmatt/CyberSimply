@@ -8,6 +8,16 @@ on:
   schedule:
     - cron: "*/30 * * * *"  # Every 30 minutes
   workflow_dispatch:
+    inputs:
+      seed_only:
+        description: >-
+          SEED MODE — run this ONCE before enabling the schedule. Records every
+          entry currently in all five feeds as already-seen without classifying
+          or pushing any of them. Without it, CISA's advisory backlog and every
+          other feed's existing entries look brand new on the first real run and
+          fire false breaking pushes.
+        type: boolean
+        default: false
 
 # A long run must not overlap the next tick and double-notify.
 concurrency:
@@ -21,8 +31,9 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      NEWSX_API_KEY: ${{ secrets.NEWSX_API_KEY }}
       ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+      # Empty on a scheduled run, so seeding can only ever be triggered by hand.
+      BREAKING_SEED_ONLY: ${{ inputs.seed_only }}
 
     steps:
       - name: Checkout repository
@@ -61,9 +72,13 @@ jobs:
             exit 1
           fi
 
-          # NEWSX_API_KEY is intentionally not required: the script exits
-          # cleanly without it, so this workflow stays inert until the key and
-          # the NewsX adapter are both in place.
+          # The feeds need no credentials, so there is no key check here. The
+          # feeds themselves are read-only public URLs; a single one failing is
+          # logged and skipped inside the script.
+          if [ "${BREAKING_SEED_ONLY:-}" = "true" ]; then
+            echo "::notice::Seed mode — recording current feed entries as seen, no classification or pushes."
+          fi
+
           node breaking-news-check.mjs
 
       - name: Alert on failure
