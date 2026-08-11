@@ -121,13 +121,14 @@ const CORROBORATION_LOOKBACK_HOURS = Number(process.env.BREAKING_CORROBORATION_H
 const CORROBORATION_MIN_OVERLAP = Number(process.env.BREAKING_CORROBORATION_OVERLAP || 0.5);
 
 /**
- * Phase 1 has no push transport: the app stores its Expo token only in
- * device-local AsyncStorage and no server-side registry exists yet, so there is
- * nobody to deliver to. Qualifying events are recorded as `pending_delivery`
- * and reported to Discord, which also gives a false-positive record to review
- * before real notifications ever fire. Flip this on once the token table ships.
+ * When true, qualifying events are delivered via the Expo Push API to every
+ * active token with breaking_news enabled. When false, decisions are recorded
+ * as pending_delivery for review without interrupting devices.
  */
 const PUSH_DELIVERY_ENABLED = process.env.BREAKING_PUSH_ENABLED === 'true';
+const EXPO_ACCESS_TOKEN = process.env.EXPO_ACCESS_TOKEN || '';
+const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+const EXPO_PUSH_CHUNK_SIZE = 100;
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -621,9 +622,10 @@ const CLASSIFICATION_SCHEMA = {
         '(e.g. "Okta", "AT&T", "Fortinet FortiOS"). Use "unknown" if the article names none.',
     },
     confidence: {
+      // Anthropic structured schemas reject integer minimum/maximum; enum is
+      // the supported way to constrain the 1–5 rubric.
       type: 'integer',
-      minimum: 1,
-      maximum: 5,
+      enum: [1, 2, 3, 4, 5],
       description: 'Certainty that this meets the breaking bar. 5 = unambiguous.',
     },
     one_line_summary: {
@@ -641,6 +643,15 @@ const CLASSIFICATION_SCHEMA = {
     'one_line_summary',
   ],
   additionalProperties: false,
+};
+
+/** Forced tool — more reliable than output_config for this Haiku classifier path. */
+const CLASSIFY_TOOL = {
+  name: 'classify_breaking_news',
+  description:
+    'Record the severity classification for a cybersecurity news article against the rubric.',
+  strict: true,
+  input_schema: CLASSIFICATION_SCHEMA,
 };
 
 const CLASSIFIER_SYSTEM_PROMPT = `
@@ -709,20 +720,21 @@ Published: ${article.published_at}${corroborationContext}
     temperature: 0,
     system: CLASSIFIER_SYSTEM_PROMPT,
     messages: [{ role: 'user', content: prompt }],
-    output_config: { format: { type: 'json_schema', schema: CLASSIFICATION_SCHEMA } },
+    tools: [CLASSIFY_TOOL],
+    tool_choice: { type: 'tool', name: CLASSIFY_TOOL.name },
   });
 
   if (response.stop_reason === 'refusal') {
     throw new Error('model refused to classify this article');
   }
   if (response.stop_reason === 'max_tokens') {
-    throw new Error('response truncated at max_tokens; JSON is incomplete');
+    throw new Error('response truncated at max_tokens; tool input is incomplete');
   }
 
-  const block = response.content.find((part) => part.type === 'text');
-  if (!block) throw new Error('no text block in classifier response');
+  const block = response.content.find((part) => part.type === 'tool_use');
+  if (!block) throw new Error('no tool_use block in classifier response');
 
-  return JSON.parse(block.text);
+  return block.input;
 }
 
 /** The push bar. Kept as one function so the threshold is easy to tune. */
@@ -795,6 +807,115 @@ async function recordPushDecision({ storyKey, articleId, status, reason, body })
   });
 
   if (error) console.error(`   ❌ Could not record push decision: ${error.message}`);
+}
+
+async function loadActivePushTokens() {
+  const { data, error } = await supabase
+    .from('notification_tokens')
+    .select('token')
+    .eq('is_active', true)
+    .eq('breaking_news', true);
+
+  if (error) throw new Error(`notification_tokens query failed: ${error.message}`);
+  return (data || []).map((row) => row.token).filter(Boolean);
+}
+
+async function deactivatePushTokens(tokens) {
+  if (!tokens.length) return;
+  const { error } = await supabase
+    .from('notification_tokens')
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .in('token', tokens);
+
+  if (error) {
+    console.error(`   ❌ Could not deactivate stale push tokens: ${error.message}`);
+  } else {
+    console.log(`   🧹 Deactivated ${tokens.length} DeviceNotRegistered token(s)`);
+  }
+}
+
+/**
+ * Sends one breaking-news Expo push to every registered device. Returns
+ * { ok, ticketCount, error } so the caller can record sent vs failed.
+ */
+async function sendBreakingPush({ articleId, body }) {
+  const tokens = await loadActivePushTokens();
+  if (tokens.length === 0) {
+    return { ok: false, ticketCount: 0, error: 'no active breaking-news tokens registered' };
+  }
+
+  const messages = tokens.map((to) => ({
+    to,
+    title: 'Breaking',
+    body,
+    sound: 'default',
+    channelId: 'default',
+    data: {
+      type: 'breaking_news',
+      articleId: String(articleId),
+      screen: 'ArticleDetail',
+    },
+  }));
+
+  const headers = {
+    Accept: 'application/json',
+    'Accept-Encoding': 'gzip, deflate',
+    'Content-Type': 'application/json',
+  };
+  if (EXPO_ACCESS_TOKEN) {
+    headers.Authorization = `Bearer ${EXPO_ACCESS_TOKEN}`;
+  }
+
+  const staleTokens = [];
+  let ticketCount = 0;
+
+  for (let i = 0; i < messages.length; i += EXPO_PUSH_CHUNK_SIZE) {
+    const chunk = messages.slice(i, i + EXPO_PUSH_CHUNK_SIZE);
+    const response = await fetch(EXPO_PUSH_URL, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(chunk),
+    });
+
+    const raw = await response.text();
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return {
+        ok: false,
+        ticketCount,
+        error: `Expo push returned non-JSON (HTTP ${response.status}): ${raw.slice(0, 200)}`,
+      };
+    }
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        ticketCount,
+        error: `Expo push HTTP ${response.status}: ${parsed.message || raw.slice(0, 200)}`,
+      };
+    }
+
+    const tickets = Array.isArray(parsed.data) ? parsed.data : [parsed.data];
+    for (let index = 0; index < tickets.length; index++) {
+      const ticket = tickets[index];
+      if (!ticket) continue;
+      ticketCount += 1;
+      if (ticket.status === 'error') {
+        const errCode = ticket.details?.error;
+        if (errCode === 'DeviceNotRegistered') {
+          staleTokens.push(chunk[index].to);
+        }
+      }
+    }
+  }
+
+  if (staleTokens.length > 0) {
+    await deactivatePushTokens(staleTokens);
+  }
+
+  return { ok: true, ticketCount, error: null };
 }
 
 async function upsertEvent({ storyKey, entity, category, notified }) {
@@ -973,6 +1094,13 @@ async function main() {
       } catch (err) {
         classifyErrors++;
         console.error(`   ❌ Classification failed for "${article.title}": ${err.message}`);
+        // Schema / request shape bugs fail identically for every article — stop
+        // after the first rather than burning the whole classification budget.
+        if (/input_schema|output_config\.format\.schema/i.test(err.message)) {
+          throw new Error(
+            `Classifier request rejected by Anthropic (not retrying remaining articles): ${err.message}`,
+          );
+        }
         continue;
       } finally {
         // Throttle every call, not just the ones that qualify — a busy window can
@@ -1046,27 +1174,62 @@ async function main() {
         continue;
       }
 
-      // Qualified and allowed. Phase 2 sends the Expo push here; until a token
-      // registry exists the decision is recorded so nothing is lost.
-      const status = PUSH_DELIVERY_ENABLED ? 'sent' : 'pending_delivery';
+      // Qualified and allowed. Deliver via Expo when enabled; otherwise record
+      // pending_delivery so the decision is reviewable before devices are hit.
+      let status = 'pending_delivery';
+      let reason = 'no push transport configured yet';
+
+      if (PUSH_DELIVERY_ENABLED) {
+        if (!articleId) {
+          status = 'failed';
+          reason = 'missing article id; cannot deep-link push';
+        } else {
+          try {
+            const delivery = await sendBreakingPush({
+              articleId,
+              body: verdict.one_line_summary,
+            });
+            if (delivery.ok) {
+              status = 'sent';
+              reason = `delivered to ${delivery.ticketCount} device(s)`;
+              console.log(`   📲 Expo push: ${delivery.ticketCount} ticket(s)`);
+            } else {
+              status = 'failed';
+              reason = delivery.error || 'expo push failed';
+              console.error(`   ❌ Expo push failed: ${reason}`);
+            }
+          } catch (err) {
+            status = 'failed';
+            reason = err.message;
+            console.error(`   ❌ Expo push threw: ${err.message}`);
+          }
+        }
+      }
 
       await upsertEvent({
         storyKey,
         entity: verdict.affected_entity,
         category: verdict.category,
+        // Cooldown applies once we attempted delivery (including a failed Expo
+        // call) so a flaky push provider cannot re-fire the same story every run.
         notified: true,
       });
       await recordPushDecision({
         storyKey,
         articleId,
         status,
-        reason: PUSH_DELIVERY_ENABLED ? null : 'no push transport configured yet',
+        reason,
         body: verdict.one_line_summary,
       });
 
-      pushed.push({ verdict, article, articleId });
+      if (status === 'sent' || status === 'pending_delivery') {
+        pushed.push({ verdict, article, articleId, status });
+        console.log(`   ✅ Breaking: ${verdict.affected_entity} — ${verdict.one_line_summary}`);
+      } else {
+        suppressed.push({ verdict, article, reason });
+        console.log(`   ⚠️ Breaking stored but push failed: ${verdict.affected_entity}`);
+      }
       processed.push(article);
-      console.log(`   ✅ Breaking: ${verdict.affected_entity} — ${verdict.one_line_summary}`);
     }
   } finally {
     // Runs even if the loop threw, so work already paid for is not repeated.

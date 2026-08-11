@@ -12,20 +12,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import { useSupabase } from '../context/SupabaseContext';
 import { notificationService, NotificationSettings } from '../services/notificationService';
 import { TYPOGRAPHY, SPACING } from '../constants';
 import { SkeletonFeed } from '../components/SkeletonCard';
 
 export function NotificationSettingsScreen() {
   const { colors } = useTheme();
-  const { authState } = useSupabase();
   const navigation = useNavigation();
   
   const [settings, setSettings] = useState<NotificationSettings>({
     enabled: false,
     time: '09:00',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    breakingNewsEnabled: true,
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -69,6 +68,29 @@ export function NotificationSettingsScreen() {
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to update notification settings');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleToggleBreakingNews = async (enabled: boolean) => {
+    setIsUpdating(true);
+    try {
+      const result = await notificationService.setBreakingNewsEnabled(enabled);
+      if (result.success) {
+        setSettings((prev) => ({ ...prev, breakingNewsEnabled: enabled }));
+        Alert.alert(
+          enabled ? 'Breaking Alerts On' : 'Breaking Alerts Off',
+          enabled
+            ? 'You will get a push when CyberSimply flags a severe, just-happened cyber event.'
+            : 'You will no longer receive breaking-news pushes on this device.',
+          [{ text: 'OK' }],
+        );
+      } else {
+        Alert.alert('Error', result.error || 'Failed to update breaking news setting');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update breaking news setting');
     } finally {
       setIsUpdating(false);
     }
@@ -280,33 +302,7 @@ export function NotificationSettingsScreen() {
     );
   }
 
-  // Guest users cannot access notification settings
-  if (authState.isGuest) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.backButton} 
-            onPress={() => navigation.goBack()}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="arrow-back" size={24} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Notifications</Text>
-          <View style={styles.headerSpacer} />
-        </View>
-        <View style={styles.loadingContainer}>
-          <Ionicons name="notifications-off-outline" size={60} color={colors.textSecondary} />
-          <Text style={[styles.loadingText, { textAlign: 'center', marginTop: SPACING.lg }]}>
-            Create an account to enable notifications
-          </Text>
-          <Text style={[styles.loadingText, { textAlign: 'center', marginTop: SPACING.sm, fontSize: 14 }]}>
-            Guest accounts have limited features
-          </Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  // Guests can enable device pushes; an account is not required.
 
   return (
     <SafeAreaView style={styles.container}>
@@ -324,10 +320,38 @@ export function NotificationSettingsScreen() {
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Breaking News</Text>
+
+          <View style={styles.infoCard}>
+            <Text style={styles.infoTitle}>Severe live events</Text>
+            <Text style={styles.infoText}>
+              Get an immediate alert when CyberSimply detects a severe, just-happened
+              cybersecurity event. Tap the notification to open that article.
+            </Text>
+          </View>
+
+          <View style={styles.settingItem}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingTitle}>Breaking News Alerts</Text>
+              <Text style={styles.settingDescription}>
+                Push notifications for breaches, outages, active attacks, and critical vulns
+              </Text>
+            </View>
+            <Switch
+              value={settings.breakingNewsEnabled}
+              onValueChange={handleToggleBreakingNews}
+              disabled={isUpdating}
+              trackColor={{ false: colors.border, true: colors.accent }}
+              thumbColor={settings.breakingNewsEnabled ? colors.background : colors.textSecondary}
+            />
+          </View>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Daily News Updates</Text>
           
           <View style={styles.infoCard}>
-            <Text style={styles.infoTitle}>📰 Stay Informed</Text>
+            <Text style={styles.infoTitle}>Stay Informed</Text>
             <Text style={styles.infoText}>
               Get a daily notification with the latest cybersecurity news and insights. 
               Never miss important security updates that could affect you or your organization.
@@ -336,7 +360,7 @@ export function NotificationSettingsScreen() {
 
           <View style={styles.settingItem}>
             <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>Enable Notifications</Text>
+              <Text style={styles.settingTitle}>Enable Daily Digest</Text>
               <Text style={styles.settingDescription}>
                 Receive daily cybersecurity news updates
               </Text>
@@ -397,12 +421,12 @@ export function NotificationSettingsScreen() {
           <Text style={styles.sectionTitle}>Privacy & Control</Text>
           
           <View style={styles.infoCard}>
-            <Text style={styles.infoTitle}>🔒 Your Privacy Matters</Text>
+            <Text style={styles.infoTitle}>Your Privacy Matters</Text>
             <Text style={styles.infoText}>
-              • Notifications are sent locally from your device{'\n'}
-              • No personal data is collected or shared{'\n'}
-              • You can disable notifications anytime{'\n'}
-              • All notification settings are stored locally on your device
+              • Breaking alerts are sent to this device only{'\n'}
+              • Your Expo push token is stored so we can reach you{'\n'}
+              • You can disable breaking or daily alerts anytime{'\n'}
+              • Daily digest times are scheduled locally on your device
             </Text>
           </View>
         </View>

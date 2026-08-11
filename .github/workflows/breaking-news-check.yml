@@ -32,6 +32,10 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+      # Set the secret to the string "true" only after notification_tokens is live
+      # and a device has registered. Leave unset/false to record pending_delivery.
+      BREAKING_PUSH_ENABLED: ${{ secrets.BREAKING_PUSH_ENABLED }}
+      EXPO_ACCESS_TOKEN: ${{ secrets.EXPO_ACCESS_TOKEN }}
       # Empty on a scheduled run, so seeding can only ever be triggered by hand.
       BREAKING_SEED_ONLY: ${{ inputs.seed_only }}
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,7 @@ import {
   StyleSheet,
   Share,
   Alert,
-  Image,
+  ActivityIndicator,
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,19 +23,83 @@ import { RootStackParamList } from '../types';
 import { AdBanner } from './AdBanner';
 import { ExpandableSummary } from './ExpandableSummary';
 import { ArticleImage } from './ArticleImage';
+import { directSupabaseService, DirectArticle } from '../services/directSupabaseService';
 
 type ArticleDetailRouteProp = RouteProp<RootStackParamList, 'ArticleDetail'>;
 
+function toProcessedArticle(directArticle: DirectArticle): ProcessedArticle {
+  return {
+    id: directArticle.id,
+    title: directArticle.title,
+    summary: directArticle.summary,
+    sourceUrl: directArticle.redirect_url || '',
+    source: directArticle.source,
+    author: directArticle.author,
+    authorDisplay: directArticle.author || directArticle.source,
+    publishedAt: directArticle.published_at,
+    imageUrl: directArticle.image_url || null,
+    category: (directArticle.category as 'cybersecurity' | 'hacking' | 'general') || 'general',
+    what: directArticle.what || '',
+    impact: directArticle.impact || '',
+    takeaways: directArticle.takeaways || '',
+    whyThisMatters: directArticle.why_this_matters || '',
+    isBreaking: directArticle.is_breaking ?? false,
+    breakingCategory: directArticle.breaking_category,
+    breakingTaggedAt: directArticle.breaking_tagged_at,
+  };
+}
+
 export function ArticleDetail() {
   const navigation = useNavigation();
-  const route = useRoute();
+  const route = useRoute<ArticleDetailRouteProp>();
   const { colors } = useTheme();
-  const { article } = route.params;
+  const params = route.params ?? {};
+  const initialArticle = params.article;
+  const articleId = params.articleId ?? initialArticle?.id;
+
+  const [fetchedArticle, setFetchedArticle] = useState<ProcessedArticle | null>(null);
+  const [loadingArticle, setLoadingArticle] = useState(!initialArticle && !!articleId);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const article = useMemo(
+    () => initialArticle ?? fetchedArticle,
+    [initialArticle, fetchedArticle],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadById() {
+      if (initialArticle || !articleId) {
+        setLoadingArticle(false);
+        return;
+      }
+
+      setLoadingArticle(true);
+      setLoadError(null);
+      const result = await directSupabaseService.getArticleById(articleId);
+      if (cancelled) return;
+
+      if (!result.success || !result.data) {
+        setLoadError(result.error || 'Article not found');
+        setFetchedArticle(null);
+      } else {
+        setFetchedArticle(toProcessedArticle(result.data));
+      }
+      setLoadingArticle(false);
+    }
+
+    loadById();
+    return () => {
+      cancelled = true;
+    };
+  }, [articleId, initialArticle]);
+
   // Read from the shared store rather than the route param, so the star stays in
   // sync with the list rows and Favorites tab instead of freezing at whatever
   // the value was when this screen was pushed.
   const { favorites, toggleFavorite } = useNews();
-  const isFavorite = favorites.includes(article.id);
+  const isFavorite = article ? favorites.includes(article.id) : false;
 
   // Create styles with access to colors
   const styles = StyleSheet.create({
@@ -189,7 +253,26 @@ export function ArticleDetail() {
     },
   });
 
-  // Safety check - if no article, show error message
+  // Safety check - loading by id, or missing article
+  if (loadingArticle) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={28} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Loading</Text>
+        </View>
+        <View style={styles.errorContainer}>
+          <ActivityIndicator size="large" color={colors.accent} />
+          <Text style={[styles.errorMessage, { marginTop: SPACING.md }]}>
+            Loading article…
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   if (!article) {
     return (
       <SafeAreaView style={styles.container}>
@@ -203,7 +286,8 @@ export function ArticleDetail() {
           <Ionicons name="alert-circle" size={64} color={colors.error} />
           <Text style={styles.errorTitle}>Article Not Found</Text>
           <Text style={styles.errorMessage}>
-            The article you're looking for could not be loaded. Please go back and try again.
+            {loadError ||
+              "The article you're looking for could not be loaded. Please go back and try again."}
           </Text>
         </View>
       </SafeAreaView>
