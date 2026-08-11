@@ -846,10 +846,13 @@ async function sendBreakingPush({ articleId, body }) {
 
   const messages = tokens.map((to) => ({
     to,
-    title: 'Breaking',
+    title: '🚨BREAKING NEWS',
     body,
     sound: 'default',
     channelId: 'default',
+    // Only severe, just-happened events reach this call, so they are worth a
+    // heads-up alert rather than a batched delivery.
+    priority: 'high',
     data: {
       type: 'breaking_news',
       articleId: String(articleId),
