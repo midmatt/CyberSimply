@@ -10,9 +10,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { ProcessedArticle } from '../services/newsService';
 import { useTheme } from '../context/ThemeContext';
 import { TYPOGRAPHY, SPACING, BORDER_RADIUS, SHADOWS } from '../constants';
-import { formatTextForDisplay, truncateAtBoundary, cleanTruncatedText } from '../utils/textUtils';
+import { formatTextForDisplay, cleanSummaryText } from '../utils/textUtils';
 import { formatArticleDate } from '../utils/dateUtils';
 import { ArticleImage } from './ArticleImage';
+import { BreakingBadge } from './BreakingBadge';
 
 interface NewsCardProps {
   article: ProcessedArticle;
@@ -22,7 +23,6 @@ interface NewsCardProps {
 }
 
 const CARD_RADIUS = BORDER_RADIUS.lg; // 16
-const PREVIEW_CHAR_BUDGET = 160; // roughly two lines at this type size
 
 export const NewsCard = memo(({ article, onPress, onToggleFavorite, isFavorite }: NewsCardProps) => {
   const { colors, isDark } = useTheme();
@@ -50,12 +50,18 @@ export const NewsCard = memo(({ article, onPress, onToggleFavorite, isFavorite }
   // to a snippet, so roughly 59% of stored summaries end mid-sentence. Fall back
   // to the provider text only when no AI text exists yet, and strip its
   // truncation marker first so the card never shows a dangling "[...]".
+  //
+  // The visible length is capped by numberOfLines on the Text below, never by a
+  // character budget — measuring in characters cut headlines mid-word at a width
+  // the layout had not actually reached.
   const previewText = React.useMemo(() => {
     const aiText = article.what?.trim();
     const usable =
-      aiText && aiText.toUpperCase() !== 'N/A' ? aiText : cleanTruncatedText(article.summary);
-    return truncateAtBoundary(formatTextForDisplay(usable ?? ''), PREVIEW_CHAR_BUDGET);
-  }, [article.what, article.summary]);
+      aiText && aiText.toUpperCase() !== 'N/A'
+        ? aiText
+        : cleanSummaryText(article.summary, article.title);
+    return formatTextForDisplay(usable ?? '');
+  }, [article.what, article.summary, article.title]);
 
   const styles = StyleSheet.create({
     card: {
@@ -116,6 +122,9 @@ export const NewsCard = memo(({ article, onPress, onToggleFavorite, isFavorite }
     aiBadge: {
       marginLeft: SPACING.xs,
       padding: 2,
+    },
+    breakingBadge: {
+      marginBottom: SPACING.xs,
     },
     title: {
       ...TYPOGRAPHY.h3,
@@ -179,11 +188,15 @@ export const NewsCard = memo(({ article, onPress, onToggleFavorite, isFavorite }
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.title} numberOfLines={3}>
+        {article.isBreaking && (
+          <BreakingBadge category={article.breakingCategory} style={styles.breakingBadge} />
+        )}
+
+        <Text style={styles.title} numberOfLines={3} ellipsizeMode="tail">
           {formatTextForDisplay(article.title)}
         </Text>
 
-        <Text style={styles.preview} numberOfLines={2}>
+        <Text style={styles.preview} numberOfLines={2} ellipsizeMode="tail">
           {previewText}
         </Text>
 

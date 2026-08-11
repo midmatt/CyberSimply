@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,23 +16,18 @@ import { useNews } from '../context/NewsContext';
 import { useTheme } from '../context/ThemeContext';
 import { ProcessedArticle } from '../services/newsService';
 import { TYPOGRAPHY, SPACING } from '../constants';
-import { ArticleCategory } from '../types';
-
-// Category interface matching CategoriesScreen
-interface Category {
-  id: ArticleCategory;
-  name: string;
-  description: string;
-  icon: string;
-  color: string;
-  articleCount: number;
-}
+import {
+  getArticleCategory,
+  getCategoryColor,
+  type ArticleCategoryMeta,
+} from '../utils/articleCategory';
+import { filterDisplayableArticles } from '../utils/articleQuality';
 
 // Define navigation types
 type RootStackParamList = {
   Main: undefined;
   ArticleDetail: { article: ProcessedArticle; isFavorite: boolean };
-  CategoryArticles: { category: Category };
+  CategoryArticles: { category: ArticleCategoryMeta };
 };
 
 type NavigationProp = {
@@ -41,29 +36,29 @@ type NavigationProp = {
 };
 
 type RouteParams = {
-  category: Category;
+  category: ArticleCategoryMeta;
 };
 
 export function CategoryArticlesScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { state, toggleFavorite, favorites, switchToCategory, loadMoreNews } = useNews();
+  const { state, toggleFavorite, favorites, loadMoreNews } = useNews();
   const { colors } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
 
-  const { category } = route.params;
+  const { category } = route.params as RouteParams;
+  const accent = getCategoryColor(category.kind, colors);
 
-  // Load category articles when component mounts
-  useEffect(() => {
-    console.log(`CategoryArticlesScreen: Loading articles for category: ${category.id}`);
-    switchToCategory(category.id);
-  }, [category.id, switchToCategory]);
-
-  // Use articles from state (which are filtered by category)
-  // Additional client-side filtering to ensure we only show articles for this specific category
-  const categoryArticles = state.articles.filter(article => 
-    article.category === category.id || 
-    (category.id === 'general' && (!article.category || article.category === 'general'))
+  // Categories are derived from the article text, not from the stored
+  // `category` column, so the list is filtered with the same rule the
+  // Categories screen counts with. Both read the loaded feed, which keeps the
+  // count on the card and the number of rows here in agreement.
+  const categoryArticles = useMemo(
+    () =>
+      filterDisplayableArticles(state.articles).filter(
+        article => getArticleCategory(article).kind === category.kind,
+      ),
+    [state.articles, category.kind],
   );
 
   // Filter articles based on search query within the category
@@ -106,8 +101,17 @@ export function CategoryArticlesScreen() {
     },
     header: {
       padding: SPACING.md,
-      borderBottomWidth: 1,
+      borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
+      // Same stacking fix as the Categories screen: an opaque, clipped header
+      // that composites above the list so rows cannot show through it.
+      backgroundColor: colors.background,
+      overflow: 'hidden',
+      zIndex: 1,
+      elevation: 1,
+    },
+    list: {
+      flex: 1,
     },
     backButton: {
       flexDirection: 'row',
@@ -191,9 +195,9 @@ export function CategoryArticlesScreen() {
   ), [handleArticlePress, handleToggleFavorite, favorites]);
 
   const renderEmptyState = useCallback(() => {
-    // Category fetch sets state.loading via switchToCategory → fetchNews.
-    // While in-flight the category filter usually yields an empty list, so
-    // skeletons fill the screen instead of a false "no articles" empty state.
+    // While the feed is still loading the category filter usually yields an
+    // empty list, so skeletons fill the screen instead of a false
+    // "no articles" empty state.
     if (state.loading && !searchQuery.trim()) {
       return <SkeletonFeed count={5} />;
     }
@@ -232,13 +236,9 @@ export function CategoryArticlesScreen() {
         </TouchableOpacity>
 
         <View style={styles.categoryHeader}>
-          <View style={[styles.iconContainer, { backgroundColor: category.color + '20' }]}>
-            <Ionicons
-              name={category.icon as any}
-              size={28}
-              color={category.color}
-            />
-          </View>
+        <View style={[styles.iconContainer, { backgroundColor: accent + '20' }]}>
+          <Ionicons name={category.icon as any} size={28} color={accent} />
+        </View>
           <Text style={styles.title}>{category.name}</Text>
         </View>
 
@@ -259,6 +259,7 @@ export function CategoryArticlesScreen() {
       </View>
 
       <FlatList
+        style={styles.list}
         data={filteredArticles}
         renderItem={renderArticle}
         keyExtractor={keyExtractor}
@@ -299,83 +300,3 @@ export function CategoryArticlesScreen() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    padding: SPACING.md,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-  },
-  backText: {
-    ...TYPOGRAPHY.body,
-    marginLeft: SPACING.xs,
-    color: '#007AFF',
-  },
-  categoryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
-  },
-  iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: SPACING.md,
-  },
-  title: {
-    ...TYPOGRAPHY.h2,
-    flex: 1,
-  },
-  subtitle: {
-    ...TYPOGRAPHY.body,
-    color: '#666',
-    marginBottom: SPACING.xs,
-  },
-  articleCount: {
-    ...TYPOGRAPHY.caption,
-    color: '#999',
-  },
-  searchContainer: {
-    padding: SPACING.md,
-  },
-  listContainer: {
-    padding: SPACING.md,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: SPACING.xl,
-  },
-  emptyStateTitle: {
-    ...TYPOGRAPHY.h3,
-    textAlign: 'center',
-    marginTop: SPACING.lg,
-    marginBottom: SPACING.md,
-  },
-  emptyStateText: {
-    ...TYPOGRAPHY.body,
-    textAlign: 'center',
-    color: '#666',
-    lineHeight: 22,
-  },
-  loadingText: {
-    ...TYPOGRAPHY.body,
-    marginBottom: SPACING.sm,
-  },
-  footerText: {
-    ...TYPOGRAPHY.caption,
-    textAlign: 'center',
-  },
-});
-

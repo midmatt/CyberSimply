@@ -7,7 +7,6 @@ import {
   Switch,
   Alert,
   ScrollView,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -16,6 +15,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useSupabase } from '../context/SupabaseContext';
 import { notificationService, NotificationSettings } from '../services/notificationService';
 import { TYPOGRAPHY, SPACING } from '../constants';
+import { SkeletonFeed } from '../components/SkeletonCard';
 
 export function NotificationSettingsScreen() {
   const { colors } = useTheme();
@@ -274,8 +274,7 @@ export function NotificationSettingsScreen() {
           <View style={styles.headerSpacer} />
         </View>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={styles.loadingText}>Loading settings...</Text>
+          <SkeletonFeed count={4} variant="panel" />
         </View>
       </SafeAreaView>
     );

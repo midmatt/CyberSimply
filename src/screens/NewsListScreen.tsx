@@ -5,7 +5,6 @@ import {
   FlatList,
   RefreshControl,
   StyleSheet,
-  ActivityIndicator,
   TouchableOpacity,
   Image,
 } from 'react-native';
@@ -13,70 +12,58 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
-import { NewsCard } from '../components/NewsCard';
+import { ArticleRow } from '../components/ArticleRow';
+import { TrendingCard, TRENDING_CARD_WIDTH } from '../components/TrendingCard';
+import { SectionHeader } from '../components/SectionHeader';
 import { SkeletonFeed } from '../components/SkeletonCard';
 import { SearchBar } from '../components/SearchBar';
 import { useNews } from '../context/NewsContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSupabase } from '../context/SupabaseContext';
 import { ProcessedArticle } from '../services/newsService';
-import { TYPOGRAPHY, SPACING } from '../constants';
-import { formatTextForDisplay } from '../utils/textUtils';
+import { TYPOGRAPHY, SPACING, BORDER_RADIUS } from '../constants';
+import { filterDisplayableArticles } from '../utils/articleQuality';
+import { sortWithBreakingPinned } from '../utils/breakingNews';
 
-// Use the unified category type
 type NewsCategory = 'all';
-
-// Define navigation types
-type RootStackParamList = {
-  Main: undefined;
-  ArticleDetail: { article: ProcessedArticle; isFavorite: boolean };
-};
-
-type TabParamList = {
-  News: { selectedCategory?: NewsCategory } | undefined;
-  Categories: undefined;
-  Favorites: undefined;
-  Settings: undefined;
-};
-
-type NavigationProp = {
-  navigate: (screen: keyof RootStackParamList, params?: any) => void;
-};
 
 type RouteParams = {
   selectedCategory?: NewsCategory;
 };
 
+/** How many stories head the trending rail. */
+const TRENDING_COUNT = 4;
+/**
+ * Below this the feed is too thin to split — everything stays in Top stories
+ * rather than showing a rail of the same articles listed directly beneath it.
+ */
+const MIN_ARTICLES_FOR_TRENDING = 6;
+
 export function NewsListScreen() {
   const navigation = useNavigation<StackNavigationProp<any, any>>();
   const route = useRoute<RouteProp<{ params: RouteParams }, 'params'>>();
-  const { state, refreshNews, toggleFavorite, favorites, loadMoreNews, getRecentArticles } = useNews();
+  const { state, refreshNews, toggleFavorite, favorites, loadMoreNews, getRecentArticles } =
+    useNews();
   const { colors, isDark } = useTheme();
   const { authState } = useSupabase();
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // Ensure theme is loaded before rendering
   useEffect(() => {
     if (colors && colors.background) {
       setIsInitialized(true);
     }
   }, [colors]);
 
-  // Search functionality is now handled directly by setSearchQuery
-
-  // Handle navigation from Categories screen
   useEffect(() => {
     if (route.params?.selectedCategory) {
-      // For now, just ignore category selection since we're using search
       console.log('Category selection ignored - using search instead');
     }
   }, [route.params?.selectedCategory]);
 
-  // Get recent articles (within the last week)
   const [recentArticles, setRecentArticles] = useState<ProcessedArticle[]>([]);
-  
+
   useEffect(() => {
     const loadRecentArticles = async () => {
       try {
@@ -87,28 +74,51 @@ export function NewsListScreen() {
         setRecentArticles([]);
       }
     };
-    
-    // Only load articles after initialization is complete
+
     if (state.isInitialized) {
       loadRecentArticles();
     }
   }, [getRecentArticles, state.isInitialized]);
 
   const filteredArticles = useMemo(() => {
-    // Use recentArticles if available, otherwise fall back to state.articles
-    const articlesToSearch = recentArticles.length > 0 ? recentArticles : state.articles;
-    
+    // Drop provider junk (package releases, forum posts, slug-derived titles)
+    // before anything can surface it — a headline of "begun development" was
+    // reaching the top trending slot.
+    const articlesToSearch = filterDisplayableArticles(
+      recentArticles.length > 0 ? recentArticles : state.articles
+    );
+
     if (!searchQuery.trim()) {
-      return articlesToSearch;
+      // A live incident outranks newer routine news for a few hours, after
+      // which the pin lapses and the feed is chronological again. Search
+      // results stay relevance-ordered, so this only applies to the feed.
+      return sortWithBreakingPinned(articlesToSearch);
     }
-    
+
     const query = searchQuery.toLowerCase();
-    return articlesToSearch.filter(article => 
-      article.title.toLowerCase().includes(query) ||
-      article.summary.toLowerCase().includes(query) ||
-      article.category.toLowerCase().includes(query)
+    return articlesToSearch.filter(
+      article =>
+        article.title.toLowerCase().includes(query) ||
+        article.summary.toLowerCase().includes(query) ||
+        article.category.toLowerCase().includes(query)
     );
   }, [searchQuery, recentArticles, state.articles]);
+
+  const isSearching = searchQuery.trim().length > 0;
+
+  // While searching the rail is suppressed so results read as a single ranked
+  // list instead of being split across two sections.
+  const showTrending = !isSearching && filteredArticles.length >= MIN_ARTICLES_FOR_TRENDING;
+
+  const trendingArticles = useMemo(
+    () => (showTrending ? filteredArticles.slice(0, TRENDING_COUNT) : []),
+    [showTrending, filteredArticles]
+  );
+
+  const topStories = useMemo(
+    () => (showTrending ? filteredArticles.slice(TRENDING_COUNT) : filteredArticles),
+    [showTrending, filteredArticles]
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -116,17 +126,22 @@ export function NewsListScreen() {
     setRefreshing(false);
   }, [refreshNews]);
 
-  const handleArticlePress = useCallback((article: ProcessedArticle) => {
-    // Navigate to article detail with the article data
-    navigation.navigate('ArticleDetail', { 
-      article: article,
-      isFavorite: favorites.includes(article.id)
-    });
-  }, [navigation, favorites]);
+  const handleArticlePress = useCallback(
+    (article: ProcessedArticle) => {
+      navigation.navigate('ArticleDetail', {
+        article,
+        isFavorite: favorites.includes(article.id),
+      });
+    },
+    [navigation, favorites]
+  );
 
-  const handleToggleFavorite = useCallback((articleId: string) => {
-    toggleFavorite(articleId);
-  }, [toggleFavorite]);
+  const handleToggleFavorite = useCallback(
+    (articleId: string) => {
+      toggleFavorite(articleId);
+    },
+    [toggleFavorite]
+  );
 
   const handleLoadMore = useCallback(() => {
     if (!state.loadingMore && state.hasMore) {
@@ -138,16 +153,19 @@ export function NewsListScreen() {
     navigation.navigate('Profile' as never);
   };
 
-  // Create styles with access to colors
-  const styles = StyleSheet.create({
+  // Memoised so the list header keeps a stable identity between renders —
+  // rebuilding it remounts the trending rail and throws away its scroll offset.
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
     container: {
       flex: 1,
       backgroundColor: colors.background,
     },
     header: {
-      padding: SPACING.md,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
+      paddingHorizontal: SPACING.md,
+      paddingTop: SPACING.sm,
+      paddingBottom: SPACING.sm,
     },
     headerTop: {
       flexDirection: 'row',
@@ -155,86 +173,79 @@ export function NewsListScreen() {
       alignItems: 'center',
       marginBottom: SPACING.md,
     },
-    logoContainer: {
+    brand: {
+      flexDirection: 'row',
       alignItems: 'center',
+      flexShrink: 1,
     },
-    headerLogo: {
-      width: 80,
-      height: 80,
+    // Square, clipped box so the mark is never letterboxed or cropped by the
+    // row height — the previous 80x80 logo dominated the header.
+    logoMark: {
+      width: 32,
+      height: 32,
+      borderRadius: BORDER_RADIUS.sm,
+      overflow: 'hidden',
+      backgroundColor: colors.surface,
     },
-    profileButton: {
-      padding: SPACING.xs,
+    logoImage: {
+      width: '100%',
+      height: '100%',
     },
-    profileImage: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
+    wordmark: {
+      ...TYPOGRAPHY.h4,
+      fontSize: 19,
+      color: colors.textPrimary,
+      marginLeft: SPACING.sm,
+      flexShrink: 1,
     },
-    profilePlaceholder: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: colors.cardBackground,
+    avatarButton: {
+      marginLeft: SPACING.sm,
+    },
+    avatar: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: colors.surface,
+    },
+    avatarPlaceholder: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: colors.surface,
       justifyContent: 'center',
       alignItems: 'center',
-      borderWidth: 1,
+      borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
-    },
-    categoryContainer: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      marginBottom: SPACING.md,
-    },
-    categoryButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: colors.cardBackground,
-      borderRadius: 20,
-      paddingHorizontal: SPACING.md,
-      paddingVertical: SPACING.sm,
-      marginRight: SPACING.sm,
-      marginBottom: SPACING.sm,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    selectedCategoryButton: {
-      backgroundColor: colors.accent,
-      borderColor: colors.accent,
-    },
-    categoryButtonText: {
-      ...TYPOGRAPHY.caption,
-      color: colors.textSecondary,
-      marginLeft: SPACING.xs,
-    },
-    selectedCategoryButtonText: {
-      color: colors.cardBackground,
-      fontWeight: '600',
     },
     listContainer: {
-      padding: SPACING.md,
+      paddingHorizontal: SPACING.md,
+      // Clears the absolutely positioned 72pt tab bar plus breathing room.
+      paddingBottom: 96,
     },
-    loadingContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
+    trendingSection: {
+      marginBottom: SPACING.lg,
     },
-    loadingText: {
-      ...TYPOGRAPHY.body,
-      color: colors.textSecondary,
-      marginTop: SPACING.md,
+    sectionHeader: {
+      marginBottom: SPACING.sm,
+    },
+    // Cancels the list's horizontal padding so cards can scroll edge to edge.
+    trendingList: {
+      marginHorizontal: -SPACING.md,
+    },
+    trendingContent: {
+      paddingHorizontal: SPACING.md,
+    },
+    trendingSeparator: {
+      width: SPACING.md - 4,
+    },
+    topStoriesHeader: {
+      marginBottom: SPACING.xs,
     },
     emptyState: {
-      flex: 1,
-      justifyContent: 'center',
       alignItems: 'center',
+      justifyContent: 'center',
       padding: SPACING.xl,
-      minHeight: 300,
-    },
-    emptyStateTitle: {
-      ...TYPOGRAPHY.h3,
-      color: colors.textPrimary,
-      marginTop: SPACING.md,
-      marginBottom: SPACING.sm,
+      minHeight: 240,
     },
     emptyStateText: {
       ...TYPOGRAPHY.body,
@@ -252,53 +263,107 @@ export function NewsListScreen() {
       color: colors.textSecondary,
       textAlign: 'center',
     },
+    footerContainer: {
+      paddingVertical: SPACING.lg,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     loadMoreButton: {
       paddingVertical: SPACING.sm,
-      paddingHorizontal: SPACING.md,
-      borderRadius: 8,
+      paddingHorizontal: SPACING.lg,
+      borderRadius: BORDER_RADIUS.full,
       backgroundColor: colors.cardBackground,
-      borderWidth: 1,
+      borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
       alignItems: 'center',
       justifyContent: 'center',
-      marginTop: SPACING.md,
     },
     loadMoreText: {
       ...TYPOGRAPHY.button,
       color: colors.accent,
     },
-    lastUpdated: {
-      ...TYPOGRAPHY.caption,
-      color: colors.textSecondary,
-      marginTop: SPACING.sm,
-    },
-    footerContainer: {
-      paddingVertical: SPACING.lg,
-      paddingHorizontal: SPACING.md,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    footerInfo: {
-      ...TYPOGRAPHY.caption,
-      color: colors.textSecondary,
-      marginTop: SPACING.sm,
-      textAlign: 'center',
-    },
-  });
+      }),
+    [colors]
+  );
 
-  const renderArticle = useCallback(({ item }: { item: ProcessedArticle }) => (
-    <NewsCard
-      article={item}
-      onPress={handleArticlePress}
-      onToggleFavorite={handleToggleFavorite}
-      isFavorite={favorites.includes(item.id)}
-    />
-  ), [handleArticlePress, handleToggleFavorite, favorites]);
+  const renderTopStory = useCallback(
+    ({ item }: { item: ProcessedArticle }) => (
+      <ArticleRow
+        article={item}
+        onPress={handleArticlePress}
+        onToggleFavorite={handleToggleFavorite}
+        isFavorite={favorites.includes(item.id)}
+      />
+    ),
+    [handleArticlePress, handleToggleFavorite, favorites]
+  );
 
-  const renderEmptyState = useCallback(() => {
-    // Initial fetch only — pull-to-refresh keeps existing cards + RefreshControl.
+  const renderTrendingCard = useCallback(
+    ({ item }: { item: ProcessedArticle }) => (
+      <TrendingCard article={item} onPress={handleArticlePress} />
+    ),
+    [handleArticlePress]
+  );
+
+  const keyExtractor = useCallback((item: ProcessedArticle) => item.id, []);
+
+  // Elements rather than component functions: FlatList treats a new function
+  // identity as a new element type and remounts, which would restart the
+  // skeleton pulse and reset the trending rail mid-scroll.
+  const listHeader = useMemo(() => {
+    if (state.loading && filteredArticles.length === 0) {
+      return null;
+    }
+
+    return (
+      <View>
+        {showTrending && (
+          <View style={styles.trendingSection}>
+            <SectionHeader
+              title="Trending today"
+              count={trendingArticles.length}
+              style={styles.sectionHeader}
+            />
+
+            <FlatList
+              data={trendingArticles}
+              renderItem={renderTrendingCard}
+              keyExtractor={keyExtractor}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.trendingList}
+              contentContainerStyle={styles.trendingContent}
+              ItemSeparatorComponent={() => <View style={styles.trendingSeparator} />}
+              snapToInterval={TRENDING_CARD_WIDTH + SPACING.md - 4}
+              decelerationRate="fast"
+            />
+          </View>
+        )}
+
+        {topStories.length > 0 && (
+          <SectionHeader
+            title={isSearching ? 'Results' : 'Top stories today'}
+            count={topStories.length}
+            style={styles.topStoriesHeader}
+          />
+        )}
+      </View>
+    );
+  }, [
+    state.loading,
+    filteredArticles.length,
+    showTrending,
+    trendingArticles,
+    topStories.length,
+    isSearching,
+    renderTrendingCard,
+    keyExtractor,
+    styles,
+  ]);
+
+  const emptyState = useMemo(() => {
     if (state.loading) {
-      return <SkeletonFeed count={5} />;
+      return <SkeletonFeed count={6} variant="row" />;
     }
 
     if (state.error) {
@@ -313,100 +378,106 @@ export function NewsListScreen() {
     return (
       <View style={styles.emptyState}>
         <Text style={styles.emptyStateText}>
-          {searchQuery.trim() 
+          {isSearching
             ? `No articles found for "${searchQuery}". Try a different search term.`
-            : 'No cybersecurity news available at the moment.'
-          }
+            : 'No cybersecurity news available at the moment.'}
         </Text>
       </View>
     );
-  }, [state.loading, state.error, searchQuery]);
+  }, [state.loading, state.error, isSearching, searchQuery, styles]);
 
-  const renderFooter = useCallback(() => {
+  const listFooter = useMemo(() => {
+    if (!state.hasMore || topStories.length === 0) {
+      return null;
+    }
+
     return (
       <View style={styles.footerContainer}>
-        {state.hasMore && (
-          <TouchableOpacity style={styles.loadMoreButton} onPress={handleLoadMore}>
-            <Text style={styles.loadMoreText}>
-              {state.loadingMore ? 'Loading...' : 'Load More Articles'}
-            </Text>
-          </TouchableOpacity>
-        )}
-        
+        <TouchableOpacity style={styles.loadMoreButton} onPress={handleLoadMore}>
+          <Text style={styles.loadMoreText}>
+            {state.loadingMore ? 'Loading…' : 'Load more stories'}
+          </Text>
+        </TouchableOpacity>
       </View>
     );
-  }, [state.hasMore, state.loadingMore, state.lastUpdated, handleLoadMore, colors.accent, filteredArticles.length]);
+  }, [state.hasMore, state.loadingMore, topStories.length, handleLoadMore, styles]);
 
-  const keyExtractor = useCallback((item: ProcessedArticle) => item.id, []);
-
-  // Show loading screen while theme initializes
   if (!isInitialized) {
+    // Skeleton rows in the shape of the real feed, so the list does not jump
+    // when articles land.
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#ffffff', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={{ marginTop: 16, fontSize: 16, color: '#333333' }}>Loading...</Text>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <View style={styles.listContainer}>
+          <SkeletonFeed count={7} variant="row" />
+        </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <View style={styles.logoContainer}>
-            <Image 
-              source={isDark 
-                ? require('../../assets/icons/In App Dark Icon.png')
-                : require('../../assets/icons/ios-light.png')
-              }
-              style={styles.headerLogo}
-              resizeMode="contain"
-            />
+          <View style={styles.brand}>
+            <View style={styles.logoMark}>
+              <Image
+                source={
+                  isDark
+                    ? // Filename must stay free of spaces: Metro fails to resolve
+                      // spaced asset paths on iOS, which rendered an empty box.
+                      require('../../assets/icons/cs-logo-dark.png')
+                    : require('../../assets/icons/ios-light.png')
+                }
+                style={styles.logoImage}
+                resizeMode="contain"
+                accessibilityLabel="CyberSimply logo"
+              />
+            </View>
+
+            <Text style={styles.wordmark} numberOfLines={1} ellipsizeMode="tail">
+              CyberSimply
+            </Text>
           </View>
-          
-          <TouchableOpacity style={styles.profileButton} onPress={handleProfilePress}>
+
+          <TouchableOpacity
+            style={styles.avatarButton}
+            onPress={handleProfilePress}
+            accessibilityRole="button"
+            accessibilityLabel="Open profile"
+          >
             {authState.user?.avatarUrl ? (
-              <Image 
-                source={{ uri: authState.user.avatarUrl }} 
-                style={styles.profileImage}
+              <Image
+                source={{ uri: authState.user.avatarUrl }}
+                style={styles.avatar}
+                resizeMode="cover"
               />
             ) : (
-              <View style={styles.profilePlaceholder}>
-                <Ionicons 
-                  name="person" 
-                  size={20} 
-                  color={colors.textSecondary} 
-                />
+              <View style={styles.avatarPlaceholder}>
+                <Ionicons name="person" size={18} color={colors.textSecondary} />
               </View>
             )}
           </TouchableOpacity>
         </View>
-        
-        <SearchBar
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Search news..."
-        />
 
+        <SearchBar value={searchQuery} onChangeText={setSearchQuery} placeholder="Search news..." />
       </View>
 
       <FlatList
-        data={filteredArticles}
-        renderItem={renderArticle}
+        data={topStories}
+        renderItem={renderTopStory}
         keyExtractor={keyExtractor}
-        ListEmptyComponent={renderEmptyState}
-        ListFooterComponent={renderFooter}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        ListHeaderComponent={listHeader}
+        ListEmptyComponent={emptyState}
+        ListFooterComponent={listFooter}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={true}
-        maxToRenderPerBatch={5}
+        maxToRenderPerBatch={8}
         windowSize={10}
-        initialNumToRender={5}
+        initialNumToRender={8}
         onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.1}
+        onEndReachedThreshold={0.4}
       />
     </SafeAreaView>
   );

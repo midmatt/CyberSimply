@@ -201,11 +201,16 @@ export const createHeavyStartupSteps = (): StartupStep[] => [
   {
     name: 'ad-service',
     critical: false,
-    timeout: 3000,
+    timeout: 8000,
     execute: async () => {
-      // Ad service initialization (non-blocking)
-      await new Promise(resolve => setTimeout(resolve, 200));
-      return { initialized: true };
+      try {
+        const { adService } = await import('../../services/adService');
+        await adService.initialize();
+        return { initialized: true };
+      } catch (error) {
+        console.warn('ℹ️ [Startup] AdMob init failed (non-critical):', error);
+        return { initialized: false, error: 'AdMob init failed' };
+      }
     }
   },
   {

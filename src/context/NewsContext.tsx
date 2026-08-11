@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, ReactNode, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, ReactNode, useCallback, useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import { ProcessedArticle } from '../services/newsService';
 import { directSupabaseService, DirectArticle } from '../services/directSupabaseService';
@@ -7,6 +7,7 @@ import { ArticleStorageService } from '../services/articleStorageService';
 import { SupabaseArticleService } from '../services/supabaseArticleService';
 import { getRecentArticles as getRecentArticlesFromUtils, getArticlesToArchive } from '../utils/dateUtils';
 import { testflightDiagnostics } from '../services/testflightDiagnostics';
+import { loadFavorites, saveFavorites } from '../services/favoritesStorage';
 
 // Helper function to validate if an article has all required fields
 const isArticleComplete = (directArticle: DirectArticle): boolean => {
@@ -40,7 +41,10 @@ const convertToProcessedArticle = (directArticle: DirectArticle): ProcessedArtic
   what: directArticle.what || '',
   impact: directArticle.impact || '',
   takeaways: directArticle.takeaways || '',
-  whyThisMatters: directArticle.why_this_matters || ''
+  whyThisMatters: directArticle.why_this_matters || '',
+  isBreaking: directArticle.is_breaking ?? false,
+  breakingCategory: directArticle.breaking_category,
+  breakingTaggedAt: directArticle.breaking_tagged_at
 });
 
 // Helper function to deduplicate articles by unique ID
@@ -96,7 +100,6 @@ type NewsAction =
   | { type: 'SET_SUMMARIZING'; payload: boolean }
   | { type: 'SET_AI_QUOTA_EXCEEDED'; payload: boolean }
   | { type: 'UPDATE_ARTICLE_SUMMARY'; payload: { id: string; summary: any } }
-  | { type: 'TOGGLE_FAVORITE'; payload: string }
   | { type: 'SET_FAVORITES'; payload: string[] }
   | { type: 'SET_STORAGE_STATS'; payload: { totalArticles: number; storageSize: string } }
   | { type: 'SET_INITIALIZED'; payload: boolean }
@@ -165,11 +168,6 @@ function newsReducer(state: NewsState, action: NewsAction): NewsState {
             : article
         )
       };
-    case 'TOGGLE_FAVORITE':
-      const favorites = state.favorites.includes(action.payload)
-        ? state.favorites.filter(id => id !== action.payload)
-        : [...state.favorites, action.payload];
-      return { ...state, favorites };
     case 'SET_FAVORITES':
       return { ...state, favorites: action.payload };
     case 'SET_STORAGE_STATS':
@@ -205,7 +203,7 @@ interface NewsContextType {
   clearError: () => void;
   clearStorage: () => Promise<void>;
   cleanupDuplicates: () => Promise<number>;
-  toggleFavorite: (articleId: string) => void;
+  toggleFavorite: (articleId: string) => Promise<void>;
   favorites: string[];
   getCategoryCounts: () => Promise<void>;
   switchToCategory: (category: string) => Promise<void>;
@@ -670,8 +668,50 @@ export function NewsProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const toggleFavorite = useCallback((articleId: string) => {
-    dispatch({ type: 'TOGGLE_FAVORITE', payload: articleId });
+  // Mirrors state.favorites so a toggle can read the current list without
+  // waiting for a re-render — otherwise two quick taps both compute from the
+  // same stale array and the second one undoes the first.
+  const favoritesRef = useRef<string[]>(state.favorites);
+  const hasLocalFavoriteChange = useRef(false);
+
+  const toggleFavorite = useCallback(async (articleId: string) => {
+    const current = favoritesRef.current;
+    const next = current.includes(articleId)
+      ? current.filter(id => id !== articleId)
+      : [...current, articleId];
+
+    favoritesRef.current = next;
+    hasLocalFavoriteChange.current = true;
+
+    // Dispatch the resolved array rather than re-deriving it in the reducer, so
+    // what is rendered and what is persisted cannot drift apart.
+    dispatch({ type: 'SET_FAVORITES', payload: next });
+
+    await saveFavorites(next);
+  }, []);
+
+  // Rehydrate on boot. Favorites were previously reducer-only state, so every
+  // force-quit dropped them.
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const stored = await loadFavorites();
+      console.log(`NewsContext: Loaded ${stored.length} favorites from storage`);
+
+      // A toggle during the read wins — applying the stored list here would
+      // roll it back.
+      if (cancelled || hasLocalFavoriteChange.current || stored.length === 0) {
+        return;
+      }
+
+      favoritesRef.current = stored;
+      dispatch({ type: 'SET_FAVORITES', payload: stored });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Initialize storage and load articles from Supabase

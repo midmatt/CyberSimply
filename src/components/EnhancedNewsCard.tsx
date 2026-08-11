@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ProcessedArticle } from '../services/newsService';
 import { useTheme } from '../context/ThemeContext';
 import { COLORS, TYPOGRAPHY, SPACING, BORDER_RADIUS, SHADOWS } from '../constants';
-import { formatTextForDisplay, cleanTruncatedText } from '../utils/textUtils';
+import { formatTextForDisplay, cleanSummaryText } from '../utils/textUtils';
 import { formatArticleDate } from '../utils/dateUtils';
 import { ExpandableSummary } from './ExpandableSummary';
 import { ArticleImage } from './ArticleImage';
@@ -316,7 +316,7 @@ export const EnhancedNewsCard = memo(({
 
         <View style={styles.content}>
           <ExpandableSummary
-            text={formatTextForDisplay(cleanTruncatedText(article.summary) || article.what)}
+            text={formatTextForDisplay(cleanSummaryText(article.summary, article.title) || article.what)}
             maxLines={3}
             textStyle={styles.summary}
           />

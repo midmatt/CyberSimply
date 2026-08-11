@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -14,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { COLORS, TYPOGRAPHY, SPACING } from '../constants';
 import { iapService } from '../services/iapService';
+import { SkeletonFeed } from '../components/SkeletonCard';
 
 export function DonationScreen() {
   const { colors } = useTheme();
@@ -262,12 +262,7 @@ export function DonationScreen() {
           <Text style={styles.sectionTitle}>Support Us</Text>
           
           {isLoading ? (
-            <View style={styles.donationCard}>
-              <ActivityIndicator size="large" color={colors.accent} />
-              <Text style={[styles.donationDescription, { textAlign: 'center', marginTop: SPACING.md }]}>
-                Loading tip options...
-              </Text>
-            </View>
+            <SkeletonFeed count={3} variant="panel" />
           ) : (
             <>
               {tipProducts.map((tip) => (

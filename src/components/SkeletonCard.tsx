@@ -163,16 +163,105 @@ export const SkeletonCard = memo(function SkeletonCard({ opacity }: SkeletonCard
   );
 });
 
+/**
+ * Compact stand-in for ArticleRow: 56x56 thumb, tag, two headline lines and a
+ * meta line, so the news feed does not reflow when articles arrive.
+ */
+export const SkeletonStoryRow = memo(function SkeletonStoryRow({ opacity }: SkeletonCardProps) {
+  const { colors, isDark } = useTheme();
+  const boneColor = isDark ? '#2c2c2c' : '#e8e8e8';
+
+  const styles = StyleSheet.create({
+    row: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      paddingVertical: SPACING.md - 4,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    body: {
+      flex: 1,
+      marginLeft: SPACING.md - 4,
+      minHeight: 56,
+      justifyContent: 'center',
+    },
+    headlineLine: {
+      height: 20,
+      justifyContent: 'center',
+    },
+  });
+
+  return (
+    <View style={styles.row} accessible accessibilityRole="progressbar" accessibilityLabel="Loading story">
+      <SkeletonBone width={56} height={56} borderRadius={10} opacity={opacity} color={boneColor} />
+
+      <View style={styles.body}>
+        <SkeletonBone width={62} height={16} borderRadius={BORDER_RADIUS.sm} opacity={opacity} color={boneColor} />
+
+        <View style={{ marginTop: SPACING.xs }}>
+          <View style={styles.headlineLine}>
+            <SkeletonBone width="100%" height={12} opacity={opacity} color={boneColor} />
+          </View>
+          <View style={styles.headlineLine}>
+            <SkeletonBone width="72%" height={12} opacity={opacity} color={boneColor} />
+          </View>
+        </View>
+
+        <View style={{ marginTop: SPACING.xs }}>
+          <SkeletonBone width="45%" height={10} opacity={opacity} color={boneColor} />
+        </View>
+      </View>
+    </View>
+  );
+});
+
+/**
+ * Generic panel placeholder for the non-article lists — settings rows, tip
+ * options, subscription plans — which have no shared card component to mirror.
+ */
+export const SkeletonPanel = memo(function SkeletonPanel({ opacity }: SkeletonCardProps) {
+  const { colors, isDark } = useTheme();
+  const boneColor = isDark ? '#2c2c2c' : '#e8e8e8';
+
+  const styles = StyleSheet.create({
+    panel: {
+      backgroundColor: colors.cardBackground,
+      borderRadius: BORDER_RADIUS.md,
+      borderWidth: isDark ? 0 : StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      padding: SPACING.md,
+      marginBottom: SPACING.sm + 2,
+    },
+  });
+
+  return (
+    <View style={styles.panel} accessible accessibilityRole="progressbar" accessibilityLabel="Loading">
+      <SkeletonBone width="55%" height={14} opacity={opacity} color={boneColor} />
+      <View style={{ marginTop: SPACING.sm }}>
+        <SkeletonBone width="100%" height={10} opacity={opacity} color={boneColor} />
+      </View>
+      <View style={{ marginTop: SPACING.xs }}>
+        <SkeletonBone width="80%" height={10} opacity={opacity} color={boneColor} />
+      </View>
+    </View>
+  );
+});
+
 interface SkeletonFeedProps {
-  /** Number of placeholder cards. Default 5 fills a typical phone screen. */
+  /** Number of placeholder rows. Default 5 fills a typical phone screen. */
   count?: number;
+  /**
+   * `card` mirrors NewsCard, `row` mirrors the compact ArticleRow feed, and
+   * `panel` is the generic block for lists with no article card to mirror.
+   */
+  variant?: 'card' | 'row' | 'panel';
 }
 
 /**
  * Shared opacity pulse across all cards so the feed shimmers in sync.
  * Uses the Animated API with useNativeDriver — no extra deps.
  */
-export function SkeletonFeed({ count = DEFAULT_COUNT }: SkeletonFeedProps) {
+export function SkeletonFeed({ count = DEFAULT_COUNT, variant = 'card' }: SkeletonFeedProps) {
   const opacity = useRef(new Animated.Value(0.45)).current;
 
   useEffect(() => {
@@ -198,10 +287,13 @@ export function SkeletonFeed({ count = DEFAULT_COUNT }: SkeletonFeedProps) {
     };
   }, [opacity]);
 
+  const Placeholder =
+    variant === 'row' ? SkeletonStoryRow : variant === 'panel' ? SkeletonPanel : SkeletonCard;
+
   return (
-    <View accessible accessibilityLabel="Loading articles" accessibilityRole="progressbar">
+    <View accessible accessibilityLabel="Loading" accessibilityRole="progressbar">
       {Array.from({ length: count }, (_, index) => (
-        <SkeletonCard key={`skeleton-${index}`} opacity={opacity} />
+        <Placeholder key={`skeleton-${index}`} opacity={opacity} />
       ))}
     </View>
   );

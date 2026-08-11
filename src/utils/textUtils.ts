@@ -14,50 +14,14 @@ export function cleanMarkdownFormatting(text: string): string {
   return text.replace(/\*\*/g, '');
 }
 
-/**
- * Truncates text without cutting mid-word.
- *
- * Provider-supplied summaries frequently arrive already truncated mid-sentence
- * (e.g. "...said three"), so this prefers a sentence boundary when one falls
- * reasonably late in the string, and otherwise falls back to the last whole
- * word. Trailing punctuation left dangling by the cut is removed.
- *
- * @param text - The text to truncate
- * @param maxChars - Soft character budget for the result
- * @returns Text ending on a clean word or sentence boundary
+/*
+ * NOTE: `truncateAtBoundary` was removed deliberately. Clipping display text to
+ * a character budget cuts headlines at a width the layout has not actually
+ * reached, and it appended an ellipsis to short strings that merely lacked
+ * closing punctuation. Cap visible length with `numberOfLines` +
+ * `ellipsizeMode="tail"` on the Text component instead, so the cut follows the
+ * real measured width.
  */
-export function truncateAtBoundary(text: string, maxChars: number = 160): string {
-  if (!text) return '';
-
-  const clean = text.replace(/\s+/g, ' ').trim();
-
-  if (clean.length <= maxChars) {
-    // Short enough to keep whole, but provider text is often already clipped
-    // mid-sentence upstream. Mark it as continuing rather than leaving it
-    // looking like a failed render.
-    return /[.!?…"')\]]$/.test(clean) ? clean : `${clean}…`;
-  }
-
-  const window = clean.slice(0, maxChars + 1);
-
-  // Prefer a sentence boundary, but only if it isn't so early that we'd throw
-  // away most of the budget.
-  const lastSentenceEnd = Math.max(
-    window.lastIndexOf('. '),
-    window.lastIndexOf('! '),
-    window.lastIndexOf('? ')
-  );
-  if (lastSentenceEnd >= maxChars * 0.6) {
-    return clean.slice(0, lastSentenceEnd + 1);
-  }
-
-  // Otherwise cut at the last complete word.
-  const lastSpace = window.lastIndexOf(' ');
-  const cutAt = lastSpace > 0 ? lastSpace : maxChars;
-  const trimmed = clean.slice(0, cutAt).replace(/[\s,;:.–—-]+$/, '');
-
-  return `${trimmed}…`;
-}
 
 /**
  * Removes upstream truncation artifacts from provider-supplied text.
@@ -96,6 +60,79 @@ export function cleanTruncatedText(text: string): string {
   // decimal like "16.9%" or an abbreviation mid-sentence is not mistaken for one.
   const upToLastSentence = cleaned.match(/^[\s\S]*[.!?]["'”’)\]]?(?=\s)/);
   return upToLastSentence ? upToLastSentence[0].trim() : cleaned;
+}
+
+/**
+ * Trailing syndication boilerplate. Aggregators paste the feed's footer into
+ * the description, so the snippet ends with the headline a second time plus the
+ * publication name, e.g. "This News <title> appeared first on STL.News".
+ */
+const SYNDICATION_FOOTER_RE =
+  /\s*(?:the post|this post|this news|this article|the article|this story)\b[\s\S]*?\bappeared first on\b[\s\S]*$/i;
+
+/** A list marker that kept its punctuation, e.g. "1. ", "2) ". */
+const LIST_MARKER_RE = /^\s*\d{1,3}\s*[.):\]]\s+/;
+
+/**
+ * A bare leading number. Ambiguous on its own ("5 million records were
+ * exposed"), so it is only removed when the headline follows it, which is the
+ * shape left behind when the marker's punctuation was stripped upstream.
+ */
+const BARE_LEADING_NUMBER_RE = /^\s*\d{1,3}\s+/;
+
+/** Case and curly-quote differences must not defeat the headline comparison. */
+function normalizeForCompare(text: string): string {
+  return text
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Repairs the artifacts that arrive baked into provider `description` fields.
+ *
+ * The summary column is stored verbatim from the news APIs and never rewritten
+ * by the AI step, so these have to be repaired on read: a leaked list-item
+ * number, the headline repeated ahead of the real body, a space orphaned before
+ * a hyphen or a full stop by the feed's HTML-to-text conversion, and the
+ * syndication footer. Removing the footer also re-exposes the "[...]" marker
+ * that was sitting mid-string, which is why the truncation cleanup runs last.
+ *
+ * @param summary - Provider-supplied summary text
+ * @param title - Article headline, used to detect a verbatim repeat
+ * @returns Display-ready summary, or '' when nothing but the headline remained
+ */
+export function cleanSummaryText(summary: string | null | undefined, title?: string): string {
+  if (!summary) return '';
+
+  let text = summary.replace(/\s+/g, ' ').trim();
+
+  text = text.replace(SYNDICATION_FOOTER_RE, '');
+
+  // An explicit marker is unambiguous, so it goes regardless of what follows.
+  text = text.replace(LIST_MARKER_RE, '');
+
+  if (title) {
+    const normalizedTitle = normalizeForCompare(title);
+    const withoutNumber = text.replace(BARE_LEADING_NUMBER_RE, '');
+
+    // Whitespace is already collapsed and the remaining mappings preserve
+    // length, so the normalized title's length indexes into the raw text.
+    if (normalizedTitle && normalizeForCompare(withoutNumber).startsWith(normalizedTitle)) {
+      text = withoutNumber.slice(normalizedTitle.length).replace(/^[\s\-–—:.,|]+/, '');
+    }
+  }
+
+  // "Bengaluru -based" — a space before a hyphen that has none after it is
+  // always damage; a spaced dash used as punctuation has spaces on both sides.
+  text = text.replace(/([A-Za-z0-9])\s+-([A-Za-z0-9])/g, '$1-$2');
+
+  // "STL.News ." — punctuation orphaned from the word it belongs to.
+  text = text.replace(/\s+([.,;:!?])/g, '$1');
+
+  return cleanTruncatedText(text);
 }
 
 /**

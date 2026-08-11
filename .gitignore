@@ -38,6 +38,12 @@ yarn-error.*
 # macOS
 .DS_Store
 *.pem
+# AppleDouble sidecars: macOS writes one per file on exFAT volumes, so they
+# appear en masse when the repo lives on an external drive.
+._*
+
+# Local archive snapshots
+*.tar.gz
 
 # local env files
 .env*.local

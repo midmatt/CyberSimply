@@ -2,173 +2,110 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
-  FlatList,
+  SectionList,
   StyleSheet,
-  ActivityIndicator,
   TouchableOpacity,
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
-import { NewsCard } from '../components/NewsCard';
+import { ArticleRow } from '../components/ArticleRow';
+import { SectionHeader } from '../components/SectionHeader';
+import { SkeletonFeed } from '../components/SkeletonCard';
 import { SearchBar } from '../components/SearchBar';
-import { AdBanner } from '../components/AdBanner';
-import { useNews } from '../context/NewsContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSupabase } from '../context/SupabaseContext';
 import { ProcessedArticle } from '../services/newsService';
-import { RootStackParamList } from '../types';
-import { COLORS, TYPOGRAPHY, SPACING } from '../constants';
+import { TYPOGRAPHY, SPACING } from '../constants';
 import { directSupabaseService, DirectArticle } from '../services/directSupabaseService';
+import { formatArticleDate, parseDate } from '../utils/dateUtils';
+import { filterDisplayableArticles } from '../utils/articleQuality';
+
+interface ArchiveSection {
+  title: string;
+  data: ProcessedArticle[];
+}
+
+/**
+ * Groups by calendar day, newest first, so the archive reads as a timeline.
+ * Undated articles fall into a single trailing bucket rather than being
+ * dropped or scattered.
+ */
+function groupByDay(articles: ProcessedArticle[]): ArchiveSection[] {
+  const buckets = new Map<string, { sortKey: number; title: string; data: ProcessedArticle[] }>();
+
+  for (const article of articles) {
+    const date = parseDate(article.publishedAt);
+    const key = date ? date.toDateString() : 'unknown';
+    let bucket = buckets.get(key);
+
+    if (!bucket) {
+      bucket = {
+        // Undated entries sort last.
+        sortKey: date ? date.getTime() : -Infinity,
+        title: date ? formatArticleDate(article.publishedAt) : 'Date unknown',
+        data: [],
+      };
+      buckets.set(key, bucket);
+    }
+
+    bucket.data.push(article);
+  }
+
+  return Array.from(buckets.values())
+    .sort((a, b) => b.sortKey - a.sortKey)
+    .map(({ title, data }) => ({ title, data }));
+}
 
 export function ArchiveScreen() {
   const navigation = useNavigation();
   const { colors } = useTheme();
-  const { state: newsState, getArchivedArticles } = useNews();
   const { authState } = useSupabase();
   const [searchQuery, setSearchQuery] = useState('');
-  
-  // Create styles with access to colors
-  const styles = StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
-    listContainer: {
-      padding: SPACING.md,
-      paddingBottom: SPACING.xl * 2, // Add extra bottom padding for footer
-    },
-    header: {
-      paddingHorizontal: SPACING.md,
-      paddingTop: SPACING.md,
-      paddingRight: SPACING.xl, // Add extra padding for profile button
-      marginBottom: SPACING.lg,
-    },
-    headerTop: {
-      flexDirection: 'row',
-      justifyContent: 'center',
-      alignItems: 'flex-start',
-      paddingRight: SPACING.sm, // Add some padding to prevent cutoff
-      position: 'relative',
-    },
-    searchContainer: {
-      paddingHorizontal: SPACING.md,
-      paddingVertical: SPACING.sm,
-    },
-    titleContainer: {
-      marginBottom: SPACING.md,
-      alignItems: 'center',
-    },
-    profileButton: {
-      padding: SPACING.xs,
-      position: 'absolute',
-      right: 0,
-      top: 0,
-      flexShrink: 0, // Prevent the button from shrinking
-    },
-    profileImage: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-    },
-    profilePlaceholder: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: colors.cardBackground,
-      justifyContent: 'center',
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    title: {
-      ...TYPOGRAPHY.h1,
-      color: colors.textPrimary,
-      marginBottom: SPACING.xs,
-      textAlign: 'center',
-    },
-    subtitle: {
-      ...TYPOGRAPHY.body,
-      color: colors.textSecondary,
-      textAlign: 'center',
-      marginBottom: SPACING.md,
-    },
-    emptyState: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      padding: SPACING.xl,
-    },
-    emptyStateText: {
-      ...TYPOGRAPHY.body,
-      color: colors.textSecondary,
-      textAlign: 'center',
-    },
-    lastUpdated: {
-      ...TYPOGRAPHY.caption,
-      textAlign: 'center',
-      color: colors.textSecondary,
-      marginTop: SPACING.sm,
-    },
-  });
-
-  // Search functionality is now handled directly by setSearchQuery
-
-  const handleToggleFavorite = useCallback((articleId: string) => {
-    // Handle favorites if needed
-    console.log('Toggle favorite:', articleId);
-  }, []);
-
-  // Get archived articles (older than two weeks) directly from Supabase
   const [archivedArticles, setArchivedArticles] = useState<ProcessedArticle[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   useEffect(() => {
     const loadArchivedArticles = async () => {
       try {
         setIsLoading(true);
-        console.log('ArchiveScreen: Fetching archived articles from Supabase...');
-        
-        // Fetch archived articles directly from Supabase
+
         const result = await directSupabaseService.getArticlesPaginated(
-          100, // limit - Get up to 100 archived articles
-          0, // offset
-          'archived' // category - articles older than 2 weeks
+          100,
+          0,
+          'archived', // articles older than two weeks
         );
-        
+
         if (result.success && result.data) {
-          console.log(`ArchiveScreen: Successfully loaded ${result.data.length} archived articles from Supabase`);
-          
-          // Convert DirectArticle to ProcessedArticle
-          const processedArticles: ProcessedArticle[] = result.data.map((article: DirectArticle) => {
-            // Determine valid category
-            let validCategory: 'cybersecurity' | 'hacking' | 'general' = 'general';
-            if (article.category === 'cybersecurity' || article.category === 'hacking') {
-              validCategory = article.category;
-            }
-            
-            return {
-              id: article.id,
-              title: article.title,
-              summary: article.summary,
-              source: article.source,
-              sourceUrl: article.redirect_url || '',
-              author: article.author || '',
-              authorDisplay: article.author || article.source || 'Unknown',
-              publishedAt: article.published_at,
-              imageUrl: article.image_url || '',
-              category: validCategory,
-              what: article.what || '',
-              impact: article.impact || '',
-              takeaways: article.takeaways || '',
-              whyThisMatters: article.why_this_matters || '',
-              aiSummaryGenerated: article.ai_summary_generated || false,
-            };
-          });
-          
-          setArchivedArticles(processedArticles);
+          const processedArticles: ProcessedArticle[] = result.data.map(
+            (article: DirectArticle) => {
+              let validCategory: 'cybersecurity' | 'hacking' | 'general' = 'general';
+              if (article.category === 'cybersecurity' || article.category === 'hacking') {
+                validCategory = article.category;
+              }
+
+              return {
+                id: article.id,
+                title: article.title,
+                summary: article.summary,
+                source: article.source,
+                sourceUrl: article.redirect_url || '',
+                author: article.author || '',
+                authorDisplay: article.author || article.source || 'Unknown',
+                publishedAt: article.published_at,
+                imageUrl: article.image_url || '',
+                category: validCategory,
+                what: article.what || '',
+                impact: article.impact || '',
+                takeaways: article.takeaways || '',
+                whyThisMatters: article.why_this_matters || '',
+                aiSummaryGenerated: article.ai_summary_generated || false,
+              };
+            },
+          );
+
+          setArchivedArticles(filterDisplayableArticles(processedArticles));
         } else {
           console.error('ArchiveScreen: Failed to load archived articles:', result.error);
           setArchivedArticles([]);
@@ -180,62 +117,160 @@ export function ArchiveScreen() {
         setIsLoading(false);
       }
     };
-    
-    // Load articles when component mounts
-    loadArchivedArticles();
-  }, []); // Empty dependency array - load once on mount
 
-  // Filter archived articles based on search query
+    loadArchivedArticles();
+  }, []);
+
   const filteredArticles = useMemo(() => {
     if (!searchQuery.trim()) {
       return archivedArticles;
     }
-    
+
     const query = searchQuery.toLowerCase();
-    return archivedArticles.filter(article => 
-      article.title.toLowerCase().includes(query) ||
-      article.summary.toLowerCase().includes(query) ||
-      article.category.toLowerCase().includes(query)
+    return archivedArticles.filter(
+      article =>
+        article.title.toLowerCase().includes(query) ||
+        article.summary.toLowerCase().includes(query) ||
+        article.category.toLowerCase().includes(query),
     );
   }, [searchQuery, archivedArticles]);
 
-  const renderArticle = useCallback(({ item }: { item: ProcessedArticle }) => {
-    return (
-      <NewsCard
-        article={item}
-        onPress={() => {
-          navigation.navigate('ArticleDetail', { 
-            article: item,
-            isFavorite: false
-          });
-        }}
-        onToggleFavorite={() => handleToggleFavorite(item.id)}
-        isFavorite={false}
+  const sections = useMemo(() => groupByDay(filteredArticles), [filteredArticles]);
+
+  const handleArticlePress = useCallback(
+    (article: ProcessedArticle) => {
+      navigation.navigate('ArticleDetail' as never, {
+        article,
+        isFavorite: false,
+      } as never);
+    },
+    [navigation],
+  );
+
+  const handleProfilePress = useCallback(() => {
+    navigation.navigate('Profile' as never);
+  }, [navigation]);
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: {
+          flex: 1,
+          backgroundColor: colors.background,
+        },
+        header: {
+          paddingHorizontal: SPACING.md,
+          paddingTop: SPACING.sm,
+          paddingBottom: SPACING.sm,
+          backgroundColor: colors.background,
+          overflow: 'hidden',
+          zIndex: 1,
+        },
+        headerTop: {
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+        },
+        title: {
+          ...TYPOGRAPHY.h1,
+          color: colors.textPrimary,
+          marginBottom: 2,
+        },
+        subtitle: {
+          ...TYPOGRAPHY.caption,
+          color: colors.textSecondary,
+        },
+        headerText: {
+          flex: 1,
+          paddingRight: SPACING.sm,
+        },
+        profileButton: {
+          padding: SPACING.xs,
+        },
+        profileImage: {
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+        },
+        profilePlaceholder: {
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          backgroundColor: colors.cardBackground,
+          justifyContent: 'center',
+          alignItems: 'center',
+          borderWidth: 1,
+          borderColor: colors.border,
+        },
+        searchContainer: {
+          paddingHorizontal: SPACING.md,
+          paddingBottom: SPACING.sm,
+          backgroundColor: colors.background,
+        },
+        list: {
+          flex: 1,
+        },
+        listContainer: {
+          paddingHorizontal: SPACING.md,
+          paddingBottom: SPACING.xl * 2,
+        },
+        sectionHeader: {
+          backgroundColor: colors.background,
+          paddingTop: SPACING.md,
+          paddingBottom: SPACING.xs,
+        },
+        emptyState: {
+          alignItems: 'center',
+          paddingHorizontal: SPACING.xl,
+          paddingTop: SPACING.xl * 2,
+        },
+        emptyStateText: {
+          ...TYPOGRAPHY.body,
+          color: colors.textSecondary,
+          textAlign: 'center',
+          marginTop: SPACING.md,
+          lineHeight: TYPOGRAPHY.body.lineHeight * 1.3,
+        },
+        footerText: {
+          ...TYPOGRAPHY.caption,
+          textAlign: 'center',
+          color: colors.textSecondary,
+        },
+      }),
+    [colors],
+  );
+
+  const renderArticle = useCallback(
+    ({ item }: { item: ProcessedArticle }) => (
+      <ArticleRow article={item} onPress={handleArticlePress} showTime={false} />
+    ),
+    [handleArticlePress],
+  );
+
+  const renderSectionHeader = useCallback(
+    ({ section }: { section: ArchiveSection }) => (
+      <SectionHeader
+        title={section.title}
+        count={section.data.length}
+        style={styles.sectionHeader}
       />
-    );
-  }, [navigation, handleToggleFavorite]);
+    ),
+    [styles.sectionHeader],
+  );
 
   const keyExtractor = useCallback((item: ProcessedArticle) => item.id, []);
 
-  const handleProfilePress = () => {
-    navigation.navigate('Profile' as never);
-  };
-
-  const renderEmptyState = useCallback(() => {
+  const emptyState = useMemo(() => {
     if (isLoading) {
-      return (
-        <View style={styles.emptyState}>
-          <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={styles.emptyStateText}>Loading archived articles...</Text>
-        </View>
-      );
+      return <SkeletonFeed count={6} variant="row" />;
     }
 
-    if (searchQuery.trim() && filteredArticles.length === 0) {
+    if (searchQuery.trim()) {
       return (
         <View style={styles.emptyState}>
+          <Ionicons name="search-outline" size={48} color={colors.textSecondary} />
           <Text style={styles.emptyStateText}>
-            No archived articles found matching "{searchQuery}"
+            No archived articles match "{searchQuery}".
           </Text>
         </View>
       );
@@ -243,71 +278,74 @@ export function ArchiveScreen() {
 
     return (
       <View style={styles.emptyState}>
+        <Ionicons name="archive-outline" size={48} color={colors.textSecondary} />
         <Text style={styles.emptyStateText}>
-          No archived articles yet! 📚{'\n'}Articles older than two weeks will automatically appear here as they age.
+          No archived articles yet. Articles older than two weeks appear here as they age.
         </Text>
       </View>
     );
-  }, [isLoading, searchQuery, filteredArticles.length, colors.accent]);
+  }, [isLoading, searchQuery, styles, colors.textSecondary]);
 
-  // Header is now rendered directly in JSX to maintain SearchBar focus
+  const footer = useMemo(() => {
+    if (filteredArticles.length === 0) {
+      return null;
+    }
+
+    return (
+      <View style={{ paddingVertical: SPACING.lg }}>
+        <Text style={styles.footerText}>
+          {filteredArticles.length} archived article
+          {filteredArticles.length === 1 ? '' : 's'}
+        </Text>
+      </View>
+    );
+  }, [filteredArticles.length, styles.footerText]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header with title */}
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <View style={styles.titleContainer}>
-            <Text style={styles.title}>Article Archive</Text>
-            <Text style={styles.subtitle}>Explore cybersecurity news from two weeks and beyond</Text>
+          <View style={styles.headerText}>
+            <Text style={styles.title}>Archive</Text>
+            <Text style={styles.subtitle}>Cybersecurity news from two weeks and beyond</Text>
           </View>
-          
+
           <TouchableOpacity style={styles.profileButton} onPress={handleProfilePress}>
             {authState.user?.avatarUrl ? (
-              <Image 
-                source={{ uri: authState.user.avatarUrl }} 
-                style={styles.profileImage}
-              />
+              <Image source={{ uri: authState.user.avatarUrl }} style={styles.profileImage} />
             ) : (
               <View style={styles.profilePlaceholder}>
-                <Ionicons 
-                  name="person" 
-                  size={20} 
-                  color={colors.textSecondary} 
-                />
+                <Ionicons name="person" size={20} color={colors.textSecondary} />
               </View>
             )}
           </TouchableOpacity>
         </View>
       </View>
-      
-      {/* SearchBar - Outside FlatList to maintain focus */}
+
+      {/* Kept outside the list so typing does not remount it and drop focus. */}
       <View style={styles.searchContainer}>
-        <SearchBar 
-          value={searchQuery} 
+        <SearchBar
+          value={searchQuery}
           onChangeText={setSearchQuery}
           placeholder="Search archived news..."
         />
       </View>
-      
-      <FlatList
-        data={filteredArticles}
+
+      <SectionList
+        style={styles.list}
+        sections={sections}
         renderItem={renderArticle}
+        renderSectionHeader={renderSectionHeader}
         keyExtractor={keyExtractor}
-        ListEmptyComponent={renderEmptyState}
+        ListEmptyComponent={emptyState}
+        ListFooterComponent={footer}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
+        stickySectionHeadersEnabled={false}
         removeClippedSubviews={true}
-        maxToRenderPerBatch={5}
+        maxToRenderPerBatch={10}
         windowSize={10}
-        initialNumToRender={5}
-        ListFooterComponent={() => (
-          <View style={{ paddingVertical: SPACING.lg, alignItems: 'center' }}>
-            <Text style={styles.lastUpdated}>
-              {filteredArticles.length} archived articles
-            </Text>
-          </View>
-        )}
+        initialNumToRender={10}
       />
     </SafeAreaView>
   );

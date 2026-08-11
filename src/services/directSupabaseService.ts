@@ -17,6 +17,11 @@ export interface DirectArticle {
   image_url: string | null;
   category: string | null;
   ai_summary_generated: boolean | null;
+  // Set by the breaking-news pipeline. Null on every article predating it.
+  is_breaking: boolean | null;
+  breaking_category: string | null;
+  breaking_severity: number | null;
+  breaking_tagged_at: string | null;
 }
 
 /**
@@ -437,7 +442,11 @@ export class DirectSupabaseService {
           redirect_url,
           image_url,
           category,
-          ai_summary_generated
+          ai_summary_generated,
+          is_breaking,
+          breaking_category,
+          breaking_severity,
+          breaking_tagged_at
         `)
         .eq('id', id)
         .single();
@@ -484,7 +493,11 @@ export class DirectSupabaseService {
           redirect_url,
           image_url,
           category,
-          ai_summary_generated
+          ai_summary_generated,
+          is_breaking,
+          breaking_category,
+          breaking_severity,
+          breaking_tagged_at
         `)
         .or(`title.ilike.%${query}%,summary.ilike.%${query}%`)
         .order('published_at', { ascending: false })
@@ -609,7 +622,11 @@ export class DirectSupabaseService {
           redirect_url,
           image_url,
           category,
-          ai_summary_generated
+          ai_summary_generated,
+          is_breaking,
+          breaking_category,
+          breaking_severity,
+          breaking_tagged_at
         `)
         .eq('category', category)
         .order('published_at', { ascending: false })

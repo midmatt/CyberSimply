@@ -25,7 +25,7 @@ export function SearchBar({ value, onChangeText, placeholder = "Search news...",
   return (
     <View style={styles.container}>
       <View style={[styles.searchContainer, { 
-        backgroundColor: colors.cardBackground, 
+        backgroundColor: colors.surface, 
         borderColor: colors.border 
       }]}>
         <Ionicons 
@@ -67,18 +67,13 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
+    borderRadius: 999,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderWidth: 1,
-    minHeight: 48,
+    minHeight: 44,
     width: '100%',
     flex: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   searchIcon: {
     marginRight: 12,

@@ -8,7 +8,6 @@ import {
   ScrollView,
   Alert,
   TextInput,
-  ActivityIndicator,
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -611,10 +610,7 @@ export function SettingsScreen() {
                     disabled={isLoading}
                   >
                     {isLoading ? (
-                      <View style={styles.loadingContainer}>
-                        <ActivityIndicator size="small" color={colors.background} />
-                        <Text style={[styles.loadingText, { color: colors.background }]}>Saving...</Text>
-                      </View>
+                      <Text style={[styles.buttonText, { color: colors.background }]}>Saving…</Text>
                     ) : (
                       <Text style={[styles.buttonText, { color: colors.background }]}>Save Changes</Text>
                     )}

@@ -34,6 +34,24 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // the articles_category_check failures that silently dropped ~25% per run.
 const STORE_ERROR_THRESHOLD = Number(process.env.STORE_ERROR_THRESHOLD || 0.2);
 
+// Providers mix real reporting with PyPI release notifications ("vulnclaw 0.3.8"),
+// vendor forum posts ("Hello everyone,"), and rows whose title came from a URL
+// slug ("begun development"). Rejecting them here keeps the feed clean at the
+// source. Mirrors src/utils/articleQuality.ts — keep the two in sync.
+const PACKAGE_RELEASE_RE = /^[a-z0-9][a-z0-9._-]*\s+v?\d+\.\d+(\.\d+)?(\.[a-z0-9]+)?$/;
+
+const isDisplayableHeadline = (title) => {
+  const trimmed = (title ?? '').trim();
+  if (!trimmed) return false;
+  if (PACKAGE_RELEASE_RE.test(trimmed)) return false;
+  if (trimmed.endsWith(',')) return false;
+  // A colon signals a terse but real headline ("Review: CTRL+ALT+PWN").
+  if (trimmed.includes(':')) return true;
+  // CJK headlines carry few spaces, so length rescues them from the word count.
+  if (trimmed.split(/\s+/).length < 3 && trimmed.length < 30) return false;
+  return true;
+};
+
 // --- Helpers for URL validation/cleanup ---
 const isValidHttpUrl = (value) => {
   try {
@@ -65,6 +83,51 @@ const normalizeCategory = (value) => {
   return allowed.includes(normalized) ? normalized : 'general';
 };
 
+// Mirrors cleanSummaryText in src/utils/textUtils.ts. Provider `description`
+// fields arrive with feed artifacts baked in: a leaked list-item number, the
+// headline repeated ahead of the body, a space orphaned before a hyphen or a
+// full stop by the feed's HTML-to-text conversion, and the syndication footer
+// ("This News <title> appeared first on <publication>"). Repairing on write
+// keeps them out of the column; the app repairs on read for rows already stored.
+const SYNDICATION_FOOTER_RE =
+  /\s*(?:the post|this post|this news|this article|the article|this story)\b[\s\S]*?\bappeared first on\b[\s\S]*$/i;
+
+const normalizeForCompare = (text) =>
+  text
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+const cleanSummary = (summary, title) => {
+  if (!summary) return '';
+
+  let text = `${summary}`.replace(/\s+/g, ' ').trim();
+
+  text = text.replace(SYNDICATION_FOOTER_RE, '');
+
+  // An explicit marker ("1. ", "2) ") is unambiguous and always goes.
+  text = text.replace(/^\s*\d{1,3}\s*[.):\]]\s+/, '');
+
+  if (title) {
+    const normalizedTitle = normalizeForCompare(title);
+    // A bare leading number is ambiguous ("5 million records were exposed"), so
+    // it is only dropped when the headline follows it.
+    const withoutNumber = text.replace(/^\s*\d{1,3}\s+/, '');
+    if (normalizedTitle && normalizeForCompare(withoutNumber).startsWith(normalizedTitle)) {
+      text = withoutNumber.slice(normalizedTitle.length).replace(/^[\s\-–—:.,|]+/, '');
+    }
+  }
+
+  // A space before a hyphen with none after it is damage; a spaced dash used as
+  // punctuation has spaces on both sides and is left alone.
+  text = text.replace(/([A-Za-z0-9])\s+-([A-Za-z0-9])/g, '$1-$2');
+  text = text.replace(/\s+([.,;:!?])/g, '$1');
+
+  return text.trim();
+};
+
 const publicationFrom = (source, url) => {
   if (source?.trim()) return source.trim();
   if (!isValidHttpUrl(url)) return 'Unknown';
@@ -75,9 +138,10 @@ const publicationFrom = (source, url) => {
 const baseRecordFrom = (article) => {
   const sourceUrl = cleanUrl(article.source_url);
   const imageUrl = cleanUrl(article.image_url);
+  const title = article.title?.trim();
   return {
-    title: article.title?.trim(),
-    summary: (article.summary || '').trim(),
+    title,
+    summary: cleanSummary(article.summary, title),
     source_url: sourceUrl,
     redirect_url: sourceUrl,
     source: publicationFrom(article.source, sourceUrl),
@@ -167,6 +231,14 @@ async function storeArticles(articles) {
     if (!article.title) {
       skippedCount++;
       console.log(`⚠️ [${i + 1}/${articles.length}] Skipping article with empty title`);
+      continue;
+    }
+
+    if (!isDisplayableHeadline(article.title)) {
+      skippedCount++;
+      console.log(
+        `⚠️ [${i + 1}/${articles.length}] Skipping non-article headline: "${article.title}"`
+      );
       continue;
     }
 
