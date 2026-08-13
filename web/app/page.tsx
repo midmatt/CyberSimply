@@ -4,6 +4,13 @@ import { ArticleRow } from '@/components/ArticleRow';
 import { AdSlot } from '@/components/AdSlot';
 import { getFeedArticles } from '@/lib/articles';
 
+/**
+ * The feed is rebuilt at most once every 10 minutes. The article pipeline runs
+ * far less often than that, so this keeps the homepage current without a
+ * Supabase round trip on every request.
+ */
+export const revalidate = 600;
+
 /** Stories stacked beside the lead card on desktop. */
 const SECONDARY_COUNT = 4;
 

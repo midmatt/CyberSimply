@@ -1,6 +1,6 @@
 # CyberSimply — website
 
-The cybersimply.com website. A Next.js (App Router) static export that reads the
+The cybersimply.com website. A Next.js (App Router) site that reads the
 **same Supabase `articles` table** the mobile app reads and the GitHub Actions
 pipeline (`fetch-articles.mjs`) writes. No article data is duplicated here.
 
@@ -9,8 +9,8 @@ pipeline (`fetch-articles.mjs`) writes. No article data is duplicated here.
 ```bash
 npm install
 npm run dev      # http://localhost:3000
-npm run build    # static export into out/
-npx serve out    # preview the built site
+npm run build    # production build
+npm run start    # preview the built site
 ```
 
 Credentials default to the public Supabase project used by the app. Override
@@ -37,9 +37,13 @@ the string — character budgets are what previously cut headlines mid-word.
 
 ## Deployment
 
-`.github/workflows/deploy.yml` builds this app and publishes `web/out` to the
-`gh-pages` branch with the `cybersimply.com` CNAME. It runs on pushes to `main`
-and after each article pipeline run, so the statically-built feed stays current.
+Hosted on Vercel (project `cybersimply`), built from this directory — the
+project's Root Directory is `web`. Pushes to `main` deploy to production and
+every other branch gets a preview URL, so no deploy workflow lives in this repo.
+
+Pages are incrementally regenerated every 10 minutes (`export const revalidate`
+in `app/page.tsx` and `app/article/[id]/page.tsx`), so new articles appear
+without a rebuild being triggered by the article pipeline.
 
 ## Accounts
 

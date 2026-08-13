@@ -11,20 +11,12 @@ const nextConfig: NextConfig = {
   },
 
   /**
-   * Static export, because cybersimply.com is served by GitHub Pages — the same
-   * host the Expo Web build used. Article data is read from Supabase at build
-   * time and the site is rebuilt after each article-fetch run, so the feed
-   * stays current without needing a Node server.
+   * cybersimply.com is served by Vercel. Pages are incrementally regenerated
+   * (see `revalidate` in app/) rather than exported statically, so the feed
+   * picks up new Supabase rows on its own instead of needing the article-fetch
+   * workflow to trigger a rebuild.
    */
-  output: 'export',
-
-  /** GitHub Pages serves `/article/x/` as a directory, so emit index.html. */
   trailingSlash: true,
-
-  images: {
-    // No image optimizer exists in a static export.
-    unoptimized: true,
-  },
 };
 
 export default nextConfig;

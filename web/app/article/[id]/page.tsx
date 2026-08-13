@@ -10,9 +10,12 @@ import { getArticleCategory } from '@/lib/category';
 import { fullDate } from '@/lib/date';
 import { formatSource, parseBullets } from '@/lib/text';
 
+export const revalidate = 600;
+
 /**
- * The static export pre-renders exactly the articles the feed links to. Any
- * other id 404s rather than silently rendering an empty shell.
+ * Pre-renders the articles the feed links to at build time. Ids outside that
+ * set are rendered on demand and cached, which keeps older articles and ones
+ * published since the last build reachable; genuinely missing ids still 404.
  */
 export async function generateStaticParams() {
   const articles = await getFeedArticles();

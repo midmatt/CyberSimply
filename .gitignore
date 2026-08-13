@@ -53,3 +53,5 @@ yarn-error.*
 build/
 *.ipa
 *.xcarchive
+.vercel
+.env*
