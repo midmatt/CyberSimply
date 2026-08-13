@@ -747,6 +747,123 @@ function qualifies(verdict) {
 }
 
 // ---------------------------------------------------------------------------
+// Reader-facing summary
+// ---------------------------------------------------------------------------
+
+/**
+ * The four sections the article detail screen renders. Breaking articles used
+ * to be written without them and left for the nightly summarizer, which meant a
+ * live incident sat at the top of the feed showing four empty sections for up
+ * to 24 hours — the opposite of what pinning it there is for. One extra Haiku
+ * call per qualifying article (a handful a day at most) buys a complete card at
+ * the moment the story breaks.
+ *
+ * Deliberately the same shape and tone as summarize-articles.mjs, minus
+ * `category`: breaking rows are pinned to 'cybersecurity' by storeBreakingArticle.
+ */
+const FEED_SUMMARY_SCHEMA = {
+  type: 'object',
+  properties: {
+    what: {
+      type: 'string',
+      description: '1-2 complete sentences describing what happened.',
+    },
+    impact: {
+      type: 'string',
+      description: '1-2 complete sentences on real-world impact.',
+    },
+    takeaways: {
+      type: 'string',
+      description: '2-3 bullet points in a single string, each line starting with "- ".',
+    },
+    why_this_matters: {
+      type: 'string',
+      description: '1-2 complete sentences explaining why this matters.',
+    },
+  },
+  required: ['what', 'impact', 'takeaways', 'why_this_matters'],
+  additionalProperties: false,
+};
+
+const FEED_SUMMARY_SYSTEM_PROMPT =
+  'You write concise, fully-finished summaries of cybersecurity news for a general audience. ' +
+  'End every sentence with punctuation.';
+
+/**
+ * Returns null rather than the string 'N/A' for an empty value. 'N/A' is what
+ * the articles table defaults these columns to, it renders literally in the
+ * app, and once ai_summary_generated flips true the nightly job's null-based
+ * filter can never find the row again — so it must never be written here.
+ */
+const ensureSentence = (text) => {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return null;
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+};
+
+/** Splits on line breaks and bullet characters only, so "Wi-Fi" survives. */
+const normalizeTakeaways = (text) => {
+  const bullets = String(text || '')
+    .split(/\r?\n|•/)
+    .map((bullet) => bullet.replace(/^\s*[-*]\s+/, '').trim())
+    .filter(Boolean);
+
+  if (bullets.length === 0) return null;
+
+  return bullets
+    .slice(0, 4)
+    .map((bullet) => (/[.!?]$/.test(bullet) ? bullet : `${bullet}.`))
+    .map((bullet) => `- ${bullet}`)
+    .join('\n');
+};
+
+/**
+ * One Haiku call per qualifying article. Returns null when the model gives back
+ * anything unusable, so the caller can omit the columns entirely rather than
+ * writing placeholders over them.
+ */
+async function summarizeForFeed(article) {
+  const prompt = `
+Summarize the article below for a general (non-technical) audience, using COMPLETE
+sentences. Do not trail off or use ellipses. Every sentence must end with punctuation.
+
+Title: ${article.title}
+Summary: ${truncateWords(article.text, CLASSIFIER_TEXT_MAX_WORDS) || 'No summary available'}
+Source: ${article.source || 'Unknown'}`.trim();
+
+  const response = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 1024,
+    temperature: 0.35,
+    system: FEED_SUMMARY_SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: prompt }],
+    output_config: { format: { type: 'json_schema', schema: FEED_SUMMARY_SCHEMA } },
+  });
+
+  if (response.stop_reason === 'refusal') {
+    throw new Error('model refused to summarize this article');
+  }
+  if (response.stop_reason === 'max_tokens') {
+    throw new Error('response truncated at max_tokens; JSON is incomplete');
+  }
+
+  const text = response.content.find((block) => block.type === 'text')?.text;
+  if (!text) throw new Error(`no text block in response (stop_reason=${response.stop_reason})`);
+
+  const result = JSON.parse(text);
+  const summary = {
+    what: ensureSentence(result.what),
+    impact: ensureSentence(result.impact),
+    takeaways: normalizeTakeaways(result.takeaways),
+    why_this_matters: ensureSentence(result.why_this_matters),
+  };
+
+  // A partial summary would still render blank sections, so treat it as a miss
+  // and let the nightly job have another go at the whole row.
+  return Object.values(summary).every(Boolean) ? summary : null;
+}
+
+// ---------------------------------------------------------------------------
 // Dedup, cooldown and the daily cap
 // ---------------------------------------------------------------------------
 
@@ -957,12 +1074,18 @@ async function upsertEvent({ storyKey, entity, category, notified }) {
 
 /**
  * Writes the article straight to the feed with its breaking flags, bypassing
- * the digest summarization queue entirely: `ai_summary_generated` is left false
- * so the nightly job can still enrich it later, but the feed does not wait for
- * that. `category` must stay inside articles_category_check's three values, so
- * the breaking kind lives in `breaking_category`.
+ * the digest summarization queue: the reader-facing sections are generated here
+ * rather than waiting on the nightly job. `category` must stay inside
+ * articles_category_check's three values, so the breaking kind lives in
+ * `breaking_category`.
+ *
+ * `summary` is null when summarization failed. In that case the four AI columns
+ * and `ai_summary_generated` are left out of the payload entirely: on a new row
+ * they fall back to the column defaults, and on a row the digest pipeline
+ * already enriched, PostgREST's on-conflict update only touches keys that are
+ * present, so the existing summary survives.
  */
-async function storeBreakingArticle(article, verdict) {
+async function storeBreakingArticle(article, verdict, summary) {
   const record = {
     title: article.title,
     // Feed-card length. The raw text can be a whole CISA advisory, which is
@@ -976,12 +1099,15 @@ async function storeBreakingArticle(article, verdict) {
     image_url: article.image_url || null,
     published_at: article.published_at,
     category: 'cybersecurity',
-    ai_summary_generated: false,
     is_breaking: true,
     breaking_category: verdict.category,
     breaking_severity: verdict.confidence,
     breaking_tagged_at: new Date().toISOString(),
   };
+
+  if (summary) {
+    Object.assign(record, summary, { ai_summary_generated: true });
+  }
 
   // The row may already exist from the digest pipeline, in which case the
   // breaking flags need to land on it rather than creating a duplicate.
@@ -1123,11 +1249,27 @@ async function main() {
       const storyKey = buildStoryKey(verdict.affected_entity, verdict.category);
       const event = await loadEvent(storyKey);
 
+      // Only qualifying articles are summarized, so this is a handful of calls a
+      // day rather than one per classified entry. A failure here costs the four
+      // sections until the nightly job picks the row up — it must never cost the
+      // article itself, which is the time-sensitive part.
+      let summary = null;
+      try {
+        summary = await summarizeForFeed(article);
+        if (!summary) {
+          console.warn(`   ⚠️ Incomplete feed summary for "${article.title}"; leaving for the nightly job.`);
+        }
+      } catch (err) {
+        console.error(`   ❌ Feed summary failed for "${article.title}": ${err.message}`);
+      } finally {
+        await wait(400);
+      }
+
       // The article is written either way: a story already notified still belongs
       // in the feed, it just must not notify a second time.
       let articleId = null;
       try {
-        articleId = await storeBreakingArticle(article, verdict);
+        articleId = await storeBreakingArticle(article, verdict, summary);
       } catch (err) {
         // Left unrecorded on purpose so the next run retries the write.
         console.error(`   ❌ Could not store breaking article: ${err.message}`);

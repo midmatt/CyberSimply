@@ -82,9 +82,11 @@ const needsSummary = (article) => {
 // window permanently unreachable — a backlog of 2751 rows had accumulated
 // invisibly. The limit now bounds the batch, not the search space.
 //
-// In practice every row needing a summary has the flag unset (rows with the
-// flag set but blank fields: 0), so the null checks are defensive. needsSummary
-// is still applied client-side to catch the '' / 'N/A' cases exactly.
+// The 'N/A' clauses are not defensive. Those four columns default to the string
+// 'N/A' in the live table, so any inserter that omits them writes placeholders
+// rather than nulls — and a row that then had the flag flipped true would be
+// invisible to a null-only filter forever. Matching the literal keeps such a row
+// recoverable. needsSummary is still applied client-side to catch '' as well.
 const NEEDS_SUMMARY_FILTER = [
   'ai_summary_generated.is.false',
   'ai_summary_generated.is.null',
@@ -92,6 +94,10 @@ const NEEDS_SUMMARY_FILTER = [
   'impact.is.null',
   'takeaways.is.null',
   'why_this_matters.is.null',
+  'what.eq.N/A',
+  'impact.eq.N/A',
+  'takeaways.eq.N/A',
+  'why_this_matters.eq.N/A',
 ].join(',');
 
 const fetchArticlesNeedingSummary = async () => {

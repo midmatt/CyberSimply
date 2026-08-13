@@ -308,54 +308,71 @@ export class ArticleStorageService {
   }
 
   /**
-   * Merge new articles with existing ones, avoiding duplicates
+   * Is this the same story as one already stored? Deliberately loose: the same
+   * article can arrive with a different id from a different fetch path, so
+   * matching on id alone would let duplicates through.
+   */
+  private static isSameArticle(existing: ProcessedArticle, candidate: ProcessedArticle): boolean {
+    // ID first (most reliable)
+    if (existing.id === candidate.id) {
+      return true;
+    }
+
+    // Title (case-insensitive)
+    if (existing.title.toLowerCase() === candidate.title.toLowerCase()) {
+      return true;
+    }
+
+    // sourceUrl if available
+    if (existing.sourceUrl && candidate.sourceUrl && existing.sourceUrl === candidate.sourceUrl) {
+      return true;
+    }
+
+    // Summary similarity (first 100 characters)
+    if (existing.summary && candidate.summary) {
+      const existingStart = existing.summary.substring(0, 100).toLowerCase();
+      const candidateStart = candidate.summary.substring(0, 100).toLowerCase();
+      if (existingStart === candidateStart && existingStart.length > 50) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Merge new articles with existing ones, avoiding duplicates.
+   *
+   * A match REPLACES the stored copy rather than discarding the incoming one.
+   * The old behaviour skipped it as a duplicate, which made this cache
+   * write-once: the first version of an article a device ever saw was the
+   * version it kept forever. That is how breaking-news articles stayed stuck
+   * showing "N/A" under every AI section on devices that had already cached
+   * them, even after the rows were corrected server-side — every refresh
+   * re-fetched the fixed article and then threw it away.
+   *
+   * Every field on ProcessedArticle comes from the server, and favourites live
+   * in their own store, so there is no local-only state to preserve here.
    */
   private static mergeArticles(existing: ProcessedArticle[], newArticles: ProcessedArticle[]): ProcessedArticle[] {
     const merged = [...existing];
-    let duplicatesFound = 0;
-    
+    let updated = 0;
+    let added = 0;
+
     for (const newArticle of newArticles) {
-      // Check if article already exists by multiple criteria to prevent duplicates
-      const exists = merged.some(existingArticle => {
-        // Check by ID first (most reliable)
-        if (existingArticle.id === newArticle.id) {
-          return true;
-        }
-        
-        // Check by title (case-insensitive)
-        if (existingArticle.title.toLowerCase() === newArticle.title.toLowerCase()) {
-          return true;
-        }
-        
-        // Check by sourceUrl if available
-        if (existingArticle.sourceUrl && newArticle.sourceUrl && existingArticle.sourceUrl === newArticle.sourceUrl) {
-          return true;
-        }
-        
-        // Check by summary similarity (first 100 characters)
-        if (existingArticle.summary && newArticle.summary) {
-          const existingStart = existingArticle.summary.substring(0, 100).toLowerCase();
-          const newStart = newArticle.summary.substring(0, 100).toLowerCase();
-          if (existingStart === newStart && existingStart.length > 50) {
-            return true;
-          }
-        }
-        
-        return false;
-      });
-      
-      if (!exists) {
+      const index = merged.findIndex(existingArticle => this.isSameArticle(existingArticle, newArticle));
+
+      if (index === -1) {
         merged.push(newArticle);
+        added++;
       } else {
-        duplicatesFound++;
-        console.log(`ArticleStorage: Skipped duplicate article: "${newArticle.title}"`);
+        merged[index] = newArticle;
+        updated++;
       }
     }
-    
-    if (duplicatesFound > 0) {
-      console.log(`ArticleStorage: Skipped ${duplicatesFound} duplicate articles`);
-    }
-    
+
+    console.log(`ArticleStorage: Merged ${added} new, ${updated} refreshed`);
+
     // Sort by published date (newest first)
     return merged.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
   }

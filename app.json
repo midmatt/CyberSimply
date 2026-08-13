@@ -2,7 +2,7 @@
   "expo": {
     "name": "CyberSimply",
     "slug": "cybersafe-news",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/icons/ios-light.png",
     "userInterfaceStyle": "automatic",
@@ -11,7 +11,7 @@
     "scheme": "cybersimply",
     "ios": {
       "supportsTablet": true,
-      "buildNumber": "68",
+      "buildNumber": "69",
       "config": {
         "googleMobileAdsAppId": "ca-app-pub-1846982089045102~4493578427"
       },

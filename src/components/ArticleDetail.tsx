@@ -27,6 +27,19 @@ import { directSupabaseService, DirectArticle } from '../services/directSupabase
 
 type ArticleDetailRouteProp = RouteProp<RootStackParamList, 'ArticleDetail'>;
 
+/**
+ * Whether an AI section actually has something to show. 'N/A' is a real value
+ * in the articles table rather than a marker this screen invented, so an
+ * emptiness check that only tests for a falsy string renders the placeholder
+ * verbatim instead of the fallback copy below. Also rejects the two markers the
+ * older summarizer left behind on failure.
+ */
+function hasAiText(text: string | null | undefined, ...failureMarkers: string[]): boolean {
+  const trimmed = (text ?? '').trim();
+  if (!trimmed || trimmed.toUpperCase() === 'N/A') return false;
+  return !failureMarkers.some(marker => trimmed.includes(marker));
+}
+
 function toProcessedArticle(directArticle: DirectArticle): ProcessedArticle {
   return {
     id: directArticle.id,
@@ -61,28 +74,43 @@ export function ArticleDetail() {
   const [loadingArticle, setLoadingArticle] = useState(!initialArticle && !!articleId);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // The freshly fetched row wins over the one the list handed us. The route
+  // param is a snapshot taken whenever the feed last cached that article, so it
+  // can be arbitrarily old — an article whose AI sections were filled in after
+  // it was cached would otherwise keep rendering the empty version for as long
+  // as the row survived on the device.
   const article = useMemo(
-    () => initialArticle ?? fetchedArticle,
-    [initialArticle, fetchedArticle],
+    () => fetchedArticle ?? initialArticle,
+    [fetchedArticle, initialArticle],
   );
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadById() {
-      if (initialArticle || !articleId) {
+      if (!articleId) {
         setLoadingArticle(false);
         return;
       }
 
-      setLoadingArticle(true);
-      setLoadError(null);
+      // Only block on the fetch when there is nothing to show yet (a push
+      // notification deep-link). With a route param in hand this revalidates
+      // behind the already-rendered article.
+      if (!initialArticle) {
+        setLoadingArticle(true);
+        setLoadError(null);
+      }
+
       const result = await directSupabaseService.getArticleById(articleId);
       if (cancelled) return;
 
       if (!result.success || !result.data) {
-        setLoadError(result.error || 'Article not found');
-        setFetchedArticle(null);
+        // A failed revalidation is not an error state — keep showing the copy
+        // we were given and surface the failure only when it is all we have.
+        if (!initialArticle) {
+          setLoadError(result.error || 'Article not found');
+          setFetchedArticle(null);
+        }
       } else {
         setFetchedArticle(toProcessedArticle(result.data));
       }
@@ -459,12 +487,10 @@ export function ArticleDetail() {
             {/* Always display What Happened section */}
             <View style={styles.aiSection}>
               <Text style={styles.aiSectionTitle}>What Happened</Text>
-              <ExpandableSummary 
+              <ExpandableSummary
                 text={formatTextForDisplay(
-                  (article as ProcessedArticle).what && 
-                  !(article as ProcessedArticle).what.includes('processing error') && 
-                  !(article as ProcessedArticle).what.includes('Details not available')
-                    ? (article as ProcessedArticle).what 
+                  hasAiText((article as ProcessedArticle).what, 'processing error', 'Details not available')
+                    ? (article as ProcessedArticle).what
                     : `This article discusses ${article.title}. The details provide important information about cybersecurity developments.`
                 )}
                 maxLines={2}
@@ -475,12 +501,10 @@ export function ArticleDetail() {
             {/* Always display Impact section */}
             <View style={styles.aiSection}>
               <Text style={styles.aiSectionTitle}>Impact</Text>
-              <ExpandableSummary 
+              <ExpandableSummary
                 text={formatTextForDisplay(
-                  (article as ProcessedArticle).impact && 
-                  !(article as ProcessedArticle).impact.includes('processing error') && 
-                  !(article as ProcessedArticle).impact.includes('Unable to determine')
-                    ? (article as ProcessedArticle).impact 
+                  hasAiText((article as ProcessedArticle).impact, 'processing error', 'Unable to determine')
+                    ? (article as ProcessedArticle).impact
                     : `This cybersecurity development impacts digital safety and security awareness. Understanding these events helps protect against similar threats.`
                 )}
                 maxLines={2}
@@ -491,11 +515,10 @@ export function ArticleDetail() {
             {/* Always display Key Takeaways section */}
             <View style={styles.aiSection}>
               <Text style={styles.aiSectionTitle}>Key Takeaways</Text>
-              <ExpandableSummary 
+              <ExpandableSummary
                 text={formatTextForDisplay(
-                  (article as ProcessedArticle).takeaways && 
-                  !(article as ProcessedArticle).takeaways.includes('processing error')
-                    ? (article as ProcessedArticle).takeaways 
+                  hasAiText((article as ProcessedArticle).takeaways, 'processing error')
+                    ? (article as ProcessedArticle).takeaways
                     : `Key takeaways from this article include staying informed about cybersecurity threats, following security best practices, and monitoring for similar incidents.`
                 )}
                 maxLines={2}
@@ -508,11 +531,10 @@ export function ArticleDetail() {
         {isProcessedArticle && (
           <View style={styles.whyItMattersContainer}>
             <Text style={styles.whyItMattersTitle}>Why This Matters</Text>
-            <ExpandableSummary 
+            <ExpandableSummary
               text={formatTextForDisplay(
-                (article as ProcessedArticle).whyThisMatters && 
-                !(article as ProcessedArticle).whyThisMatters.includes('processing error')
-                  ? (article as ProcessedArticle).whyThisMatters 
+                hasAiText((article as ProcessedArticle).whyThisMatters, 'processing error')
+                  ? (article as ProcessedArticle).whyThisMatters
                   : `Understanding these cybersecurity events helps protect your digital safety and keeps you informed about emerging threats.`
               )}
               maxLines={2}
