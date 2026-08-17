@@ -17,7 +17,6 @@ const isArticleComplete = (directArticle: DirectArticle): boolean => {
     directArticle.summary &&
     directArticle.source &&
     directArticle.published_at &&
-    directArticle.image_url &&
     directArticle.what &&
     directArticle.impact &&
     directArticle.takeaways &&
@@ -294,8 +293,8 @@ export function NewsProvider({ children }: { children: ReactNode }) {
       console.log(`NewsContext: Found ${completeArticles.length} complete articles out of ${result.data.length} total articles`);
       
       if (completeArticles.length === 0) {
-        console.warn('NewsContext: No complete articles found - all articles missing required fields');
-        throw new Error('No complete articles available. All articles are missing required fields like thumbnails or summaries.');
+        console.warn('NewsContext: No complete articles found - all articles missing required summary fields');
+        throw new Error('No complete articles available. All articles are missing required summary fields.');
       }
       
       const processedArticles = completeArticles.map(convertToProcessedArticle);

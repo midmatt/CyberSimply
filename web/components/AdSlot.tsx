@@ -11,8 +11,7 @@ declare global {
 }
 
 interface AdSlotProps {
-  /** AdSense ad unit id. Until units are created in the dashboard this is
-   *  undefined and the slot never fills. */
+  /** AdSense ad unit id. Auto ads still run site-wide without this. */
   slot?: string;
   label?: string;
   className?: string;
@@ -58,7 +57,7 @@ export function AdSlot({ slot, label = 'Advertisement', className = '' }: AdSlot
   const [filled, setFilled] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (!mounted || !ready || isAdFree || pushed.current) return;
+    if (!slot || !mounted || !ready || isAdFree || pushed.current) return;
 
     const element = insRef.current;
     if (!element) return;
@@ -92,6 +91,7 @@ export function AdSlot({ slot, label = 'Advertisement', className = '' }: AdSlot
   }, [mounted, ready, isAdFree]);
 
   if ((ready && isAdFree) || filled === false) return null;
+  if (!slot) return null;
 
   return (
     <div

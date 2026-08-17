@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { CategoryTag } from './CategoryTag';
+import { BreakingBadge } from './BreakingBadge';
 import { AiSparkle } from './AiSparkle';
 import { ArticleThumb } from './ArticleThumb';
 import { getArticleCategory } from '@/lib/category';
@@ -37,7 +38,10 @@ export function ArticleCard({ article, variant = 'standard' }: ArticleCardProps)
       />
 
       <div className={`flex flex-1 flex-col ${isLead ? 'gap-3 p-5 sm:p-6' : 'gap-2 p-4'}`}>
-        <CategoryTag category={category} />
+        <div className="flex flex-wrap items-center gap-1.5">
+          {article.is_breaking && <BreakingBadge category={article.breaking_category} />}
+          <CategoryTag category={category} />
+        </div>
 
         <h2
           className={

@@ -3,6 +3,7 @@ import { ArticleCard } from '@/components/ArticleCard';
 import { ArticleRow } from '@/components/ArticleRow';
 import { AdSlot } from '@/components/AdSlot';
 import { getFeedArticles } from '@/lib/articles';
+import { ADSENSE_SLOTS } from '@/lib/config';
 
 /**
  * The feed is rebuilt at most once every 10 minutes. The article pipeline runs
@@ -75,7 +76,7 @@ export default async function HomePage() {
                 {AD_AFTER_CARDS.includes(index) && (
                   // Spans the full row so neighbouring cards keep their widths
                   // instead of being pushed into an uneven column.
-                  <AdSlot className="sm:col-span-2 lg:col-span-3" />
+                  <AdSlot slot={ADSENSE_SLOTS.inFeed || ADSENSE_SLOTS.display} className="sm:col-span-2 lg:col-span-3" />
                 )}
                 <ArticleCard article={article} />
               </Fragment>

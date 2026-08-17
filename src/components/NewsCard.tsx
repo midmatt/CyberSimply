@@ -148,7 +148,12 @@ export const NewsCard = memo(({ article, onPress, onToggleFavorite, isFavorite }
   return (
     <TouchableOpacity style={styles.card} onPress={handlePress} activeOpacity={0.85}>
       <View style={styles.imageWrapper}>
-        <ArticleImage imageUrl={article.imageUrl} containerStyle={styles.image} />
+        <ArticleImage
+          imageUrl={article.imageUrl}
+          containerStyle={styles.image}
+          showPlaceholderText={false}
+          placeholderIconSize={32}
+        />
       </View>
 
       <View style={styles.content}>

@@ -199,19 +199,30 @@ async function postDiscordLog(message) {
 // ---------------------------------------------------------------------------
 
 /**
- * `description` lands on `content`; `content:encoded` needs declaring. Dark
- * Reading is the only feed carrying images, and it uses media:* rather than
- * <enclosure>, which The Hacker News uses.
+ * `description` lands on `content`; `content:encoded` needs declaring.
+ * Image tags are inconsistent across the five feeds:
+ *   - The Hacker News: <enclosure url type="image/jpeg">
+ *   - Dark Reading: media:content + media:thumbnail
+ *   - Krebs: <img> inside content:encoded, never enclosure/media
+ *   - BleepingComputer: teaser-only, image is og:image on the article page
+ *   - CISA: no article artwork at all
  */
 const parser = new Parser({
   customFields: {
     item: [
       ['content:encoded', 'contentEncoded'],
-      ['media:content', 'mediaContent'],
-      ['media:thumbnail', 'mediaThumbnail'],
+      ['media:content', 'mediaContent', { keepArray: true }],
+      ['media:thumbnail', 'mediaThumbnail', { keepArray: true }],
     ],
   },
 });
+
+/**
+ * Don't spend a page fetch hunting for artwork here.
+ * CISA advisories have none; Dark Reading's CDN 403s non-browser clients.
+ * Dark Reading images come from media:* in the feed instead.
+ */
+const SKIP_PAGE_IMAGE_FETCH = new Set(['CISA Advisories', 'Dark Reading']);
 
 const stripHtml = (html) =>
   String(html || '')
@@ -258,11 +269,123 @@ function buildEntryKey(feedName, rawId) {
   return crypto.createHash('sha256').update(`${feedName}|${rawId}`).digest('hex').slice(0, 40);
 }
 
-function pickImage(item) {
-  const media = Array.isArray(item.mediaContent) ? item.mediaContent[0] : item.mediaContent;
-  const thumb = Array.isArray(item.mediaThumbnail) ? item.mediaThumbnail[0] : item.mediaThumbnail;
-  const candidates = [item.enclosure?.url, media?.$?.url, thumb?.$?.url];
-  return candidates.find((url) => typeof url === 'string' && /^https?:\/\//i.test(url)) || null;
+function decodeEntities(value) {
+  return String(value || '')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0?39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>');
+}
+
+function asImageUrl(value, baseUrl) {
+  const raw = decodeEntities(value).trim();
+  if (!raw || raw.startsWith('data:')) return null;
+  try {
+    const parsed = new URL(raw, baseUrl || undefined);
+    if (parsed.protocol === 'http:') parsed.protocol = 'https:';
+    if (parsed.protocol !== 'https:') return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function isUsefulImageUrl(url) {
+  const lower = url.toLowerCase();
+  if (
+    /sprite|pixel|tracking|1x1|spacer|favicon|gravatar|emoji|badge|us_flag_small|icon-dot-gov|icon-https/.test(
+      lower,
+    )
+  ) {
+    return false;
+  }
+  if (/(?:^|\/)(?:logo|icon)(?:[-_.]|\b)/.test(lower) && !/wp-content\/uploads/.test(lower)) {
+    return false;
+  }
+  return true;
+}
+
+function urlsFromMedia(node) {
+  if (!node) return [];
+  if (typeof node === 'string') return [node];
+  if (Array.isArray(node)) return node.flatMap(urlsFromMedia);
+  const attrs = node.$ || {};
+  return [node.url, node.href, attrs.url, attrs.href].filter(Boolean);
+}
+
+function urlsFromHtml(html) {
+  if (!html) return [];
+  const out = [];
+  const tags = String(html).match(/<img\b[^>]*>/gi) || [];
+  for (const tag of tags) {
+    const attr =
+      tag.match(/\b(?:src|data-src|data-original|data-lazy-src)=["']([^"']+)["']/i) ||
+      tag.match(/\bsrcset=["']([^"']+)["']/i);
+    if (!attr) continue;
+    const candidate = attr[1]
+      .split(',')
+      .map((part) => part.trim().split(/\s+/)[0])
+      .filter(Boolean)
+      .pop();
+    if (candidate) out.push(candidate);
+  }
+  return out;
+}
+
+function enclosureUrls(item) {
+  const list = [item.enclosure, ...(Array.isArray(item.enclosures) ? item.enclosures : [])].filter(
+    Boolean,
+  );
+  return list
+    .filter((enc) => {
+      if (!enc?.url) return false;
+      const type = `${enc.type || ''}`.toLowerCase();
+      return !type || type.startsWith('image/') || type === 'application/octet-stream';
+    })
+    .map((enc) => enc.url);
+}
+
+function pickImage(item, baseUrl) {
+  const candidates = [
+    ...enclosureUrls(item),
+    ...urlsFromMedia(item.mediaContent),
+    ...urlsFromMedia(item.mediaThumbnail),
+    item.itunes?.image,
+    ...urlsFromHtml(item.contentEncoded),
+    ...urlsFromHtml(item.content),
+    ...urlsFromHtml(item.description),
+    ...urlsFromHtml(item.summary),
+  ];
+
+  for (const raw of candidates) {
+    const url = asImageUrl(raw, baseUrl);
+    if (url && isUsefulImageUrl(url)) return url;
+  }
+  return null;
+}
+
+function pickPageImage(doc, pageUrl) {
+  const metas = [
+    doc.querySelector('meta[property="og:image:secure_url"]')?.getAttribute('content'),
+    doc.querySelector('meta[property="og:image"]')?.getAttribute('content'),
+    doc.querySelector('meta[name="twitter:image"]')?.getAttribute('content'),
+    doc.querySelector('meta[name="twitter:image:src"]')?.getAttribute('content'),
+    doc.querySelector('link[rel="image_src"]')?.getAttribute('href'),
+  ];
+  for (const raw of metas) {
+    const url = asImageUrl(raw, pageUrl);
+    if (url && isUsefulImageUrl(url)) return url;
+  }
+
+  const imgs = doc.querySelectorAll(
+    'article img[src], .entry-content img[src], .post-content img[src], img[src], img[data-src]',
+  );
+  for (const img of imgs) {
+    const url = asImageUrl(img.getAttribute('src') || img.getAttribute('data-src'), pageUrl);
+    if (url && isUsefulImageUrl(url)) return url;
+  }
+  return null;
 }
 
 function normalizeEntry(item, feed) {
@@ -283,7 +406,7 @@ function normalizeEntry(item, feed) {
     source_feed: feed.name,
     source_url: sourceUrl,
     author: item.creator?.trim() || item.author?.trim() || null,
-    image_url: pickImage(item),
+    image_url: pickImage(item, sourceUrl || feed.url),
     // isoDate is rss-parser's normalized pubDate; it parsed correctly on all
     // five feeds, including CISA's two-digit year. Recorded for display only —
     // nothing gates on it any more.
@@ -328,7 +451,8 @@ async function fetchAllFeeds() {
     FEEDS.map(async (feed) => {
       try {
         const entries = await fetchFeed(feed);
-        console.log(`   ✓ ${feed.name}: ${entries.length} entries`);
+        const imaged = entries.filter((entry) => entry.image_url).length;
+        console.log(`   ✓ ${feed.name}: ${entries.length} entries (${imaged} with images)`);
         return { feed, entries, error: null };
       } catch (err) {
         const message = err.name === 'AbortError' ? `timed out after ${FEED_TIMEOUT_MS}ms` : err.message;
@@ -357,14 +481,14 @@ async function fetchAllFeeds() {
 }
 
 /**
- * Readability fallback for the thin feeds. Only called for entries that already
- * survived the first-seen diff and the keyword prefilter, so a busy run fetches
- * a handful of URLs rather than all ~155 entries.
+ * Readability + Open Graph fallback for the thin feeds. Only called for
+ * entries that already survived the first-seen diff and the keyword prefilter,
+ * so a busy run fetches a handful of URLs rather than all ~155 entries.
  *
  * JSDOM is constructed without runScripts and without a resource loader, so the
  * remote page's own JavaScript never executes.
  */
-async function fetchArticleBody(url) {
+async function fetchArticlePage(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ARTICLE_TIMEOUT_MS);
 
@@ -379,8 +503,14 @@ async function fetchArticleBody(url) {
     if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
 
     dom = new JSDOM(await response.text(), { url });
-    const parsed = new Readability(dom.window.document).parse();
-    return stripHtml(parsed?.textContent || parsed?.content || '');
+    let text = '';
+    try {
+      const parsed = new Readability(dom.window.document).parse();
+      text = stripHtml(parsed?.textContent || parsed?.content || '');
+    } catch {
+      // Image extraction below does not need a readable article body.
+    }
+    return { text, image: pickPageImage(dom.window.document, url) };
   } finally {
     clearTimeout(timer);
     // JSDOM leaks timers and the run is long-lived across many entries.
@@ -389,13 +519,14 @@ async function fetchArticleBody(url) {
 }
 
 /**
- * Fills in body text for entries whose teaser is too thin to judge. Every fetch
- * is individually guarded: a slow or dead article leaves that entry with its
- * teaser and the run carries on.
+ * Fills in body text for thin teasers and article artwork when the feed did
+ * not carry an image. Every fetch is individually guarded: a slow or dead
+ * article leaves that entry with its teaser and the run carries on.
  */
 async function enrichThinEntries(entries) {
   let attempted = 0;
   let succeeded = 0;
+  let imagesRecovered = 0;
   // Tallied per feed rather than logged per entry: Dark Reading blocks article
   // fetches at its CDN for every non-browser client, so a per-entry warning
   // would put ~23 identical lines in every one of the 48 daily runs. The feed
@@ -403,15 +534,22 @@ async function enrichThinEntries(entries) {
   const failuresByFeed = new Map();
 
   for (const entry of entries) {
-    if (wordCount(entry.text) >= MIN_TEASER_WORDS) continue;
+    const needsText = wordCount(entry.text) < MIN_TEASER_WORDS;
+    const needsImage =
+      !entry.image_url && !SKIP_PAGE_IMAGE_FETCH.has(entry.source_feed);
+    if (!needsText && !needsImage) continue;
 
     attempted++;
     try {
-      const body = await fetchArticleBody(entry.source_url);
-      if (wordCount(body) > wordCount(entry.text)) {
-        entry.text = body;
+      const page = await fetchArticlePage(entry.source_url);
+      if (needsText && wordCount(page.text) > wordCount(entry.text)) {
+        entry.text = page.text;
         entry.text_source = 'readability';
         succeeded++;
+      }
+      if (!entry.image_url && page.image) {
+        entry.image_url = page.image;
+        imagesRecovered++;
       }
     } catch (err) {
       const message = err.name === 'AbortError' ? `timed out after ${ARTICLE_TIMEOUT_MS}ms` : err.message;
@@ -425,12 +563,12 @@ async function enrichThinEntries(entries) {
       .map(([feed, { count, lastError }]) => `${feed} ${count} (${lastError})`)
       .join(', ');
     console.log(
-      `   📄 Readability: ${succeeded}/${attempted} bodies recovered` +
+      `   📄 Readability: ${succeeded}/${attempted} bodies recovered, ${imagesRecovered} images` +
         (failed ? ` — failed: ${failed}` : ''),
     );
   }
 
-  return { attempted, succeeded, failuresByFeed };
+  return { attempted, succeeded, imagesRecovered, failuresByFeed };
 }
 
 /**
@@ -493,6 +631,62 @@ async function pruneOldEntries() {
   const cutoff = new Date(Date.now() - ENTRY_RETENTION_DAYS * 86_400_000).toISOString();
   const { error } = await supabase.from('processed_feed_entries').delete().lt('first_seen_at', cutoff);
   if (error) console.warn(`⚠️ Could not prune processed_feed_entries: ${error.message}`);
+}
+
+/**
+ * First-seen tracking means a breaking row written without an image is never
+ * classified again, so it would stay blank forever. Patch recent imageless
+ * breaking articles from this run's feed images, then from the article page.
+ */
+async function repairMissingImages(feedEntries) {
+  const { data, error } = await supabase
+    .from('articles')
+    .select('id, source_url, source_feed')
+    .is('image_url', null)
+    .eq('is_breaking', true)
+    .order('breaking_tagged_at', { ascending: false })
+    .limit(30);
+
+  if (error) {
+    console.warn(`⚠️ Image backfill lookup failed: ${error.message}`);
+    return { attempted: 0, updated: 0 };
+  }
+
+  const rows = data ?? [];
+  if (rows.length === 0) return { attempted: 0, updated: 0 };
+
+  const fromFeed = new Map(
+    feedEntries.filter((entry) => entry.image_url).map((entry) => [entry.source_url, entry.image_url]),
+  );
+
+  let updated = 0;
+  for (const row of rows) {
+    let image = fromFeed.get(row.source_url) || null;
+    if (!image && row.source_url && !SKIP_PAGE_IMAGE_FETCH.has(row.source_feed)) {
+      try {
+        const page = await fetchArticlePage(row.source_url);
+        image = page.image;
+      } catch {
+        // Same per-feed silence as enrichThinEntries: Dark Reading 403s every time.
+      }
+    }
+    if (!image) continue;
+
+    const { error: updateError } = await supabase
+      .from('articles')
+      .update({ image_url: image })
+      .eq('id', row.id);
+    if (updateError) {
+      console.warn(`⚠️ Could not backfill image for ${row.id}: ${updateError.message}`);
+      continue;
+    }
+    updated++;
+  }
+
+  if (rows.length > 0) {
+    console.log(`   🖼️ Backfilled images on ${updated}/${rows.length} breaking articles`);
+  }
+  return { attempted: rows.length, updated };
 }
 
 // ---------------------------------------------------------------------------
@@ -1073,19 +1267,33 @@ async function upsertEvent({ storyKey, entity, category, notified }) {
 // ---------------------------------------------------------------------------
 
 /**
- * Writes the article straight to the feed with its breaking flags, bypassing
- * the digest summarization queue: the reader-facing sections are generated here
- * rather than waiting on the nightly job. `category` must stay inside
- * articles_category_check's three values, so the breaking kind lives in
- * `breaking_category`.
- *
- * `summary` is null when summarization failed. In that case the four AI columns
- * and `ai_summary_generated` are left out of the payload entirely: on a new row
- * they fall back to the column defaults, and on a row the digest pipeline
- * already enriched, PostgREST's on-conflict update only touches keys that are
- * present, so the existing summary survives.
+ * Last chance before a breaking row is written. BleepingComputer never puts a
+ * photo in the feed; the artwork is og:image on the article page. CISA
+ * advisories have none, so they stay null rather than burning a fetch.
  */
+async function ensureImageUrl(article) {
+  if (article.image_url) return article.image_url;
+  if (!article.source_url) return null;
+  if (article.source_feed === 'CISA Advisories') return null;
+
+  try {
+    const page = await fetchArticlePage(article.source_url);
+    return page.image || null;
+  } catch {
+    return null;
+  }
+}
+
 async function storeBreakingArticle(article, verdict, summary) {
+  if (!article.image_url) {
+    article.image_url = await ensureImageUrl(article);
+  }
+
+  // Writes the article straight to the feed with its breaking flags, bypassing
+  // the digest summarization queue. `category` stays inside
+  // articles_category_check's three values; the breaking kind lives in
+  // `breaking_category`. When summarization failed the four AI columns are
+  // omitted so an existing digest summary survives the on-conflict update.
   const record = {
     title: article.title,
     // Feed-card length. The raw text can be a whole CISA advisory, which is
@@ -1096,7 +1304,6 @@ async function storeBreakingArticle(article, verdict, summary) {
     source_url: article.source_url,
     redirect_url: article.source_url,
     author: article.author || null,
-    image_url: article.image_url || null,
     published_at: article.published_at,
     category: 'cybersecurity',
     is_breaking: true,
@@ -1104,6 +1311,10 @@ async function storeBreakingArticle(article, verdict, summary) {
     breaking_severity: verdict.confidence,
     breaking_tagged_at: new Date().toISOString(),
   };
+
+  if (article.image_url) {
+    record.image_url = article.image_url;
+  }
 
   if (summary) {
     Object.assign(record, summary, { ai_summary_generated: true });
@@ -1133,6 +1344,13 @@ async function main() {
   );
 
   const { entries, failures, perFeed } = await fetchAllFeeds();
+  const feedImages = entries.filter((entry) => entry.image_url).length;
+  console.log(`   🖼️ ${feedImages}/${entries.length} feed entries have thumbnails`);
+
+  let imageRepair = { attempted: 0, updated: 0 };
+  if (!SEED_ONLY) {
+    imageRepair = await repairMissingImages(entries);
+  }
 
   // Every feed failing is an outage, not an empty news cycle.
   if (entries.length === 0) {
@@ -1396,6 +1614,8 @@ async function main() {
     `| Classified | ${toClassify.length} |`,
     `| Corroborated | ${corroboratedCount} |`,
     `| Readability fallbacks | ${readability.succeeded}/${readability.attempted} |`,
+    `| Images recovered this run | ${readability.imagesRecovered || 0} |`,
+    `| Image backfill | ${imageRepair.updated}/${imageRepair.attempted} |`,
     `| Qualified | ${pushed.length} |`,
     `| Suppressed | ${suppressed.length} |`,
     `| Classifier errors | ${classifyErrors} |`,

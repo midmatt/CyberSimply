@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { FEED_LIMIT, SUPABASE_ANON_KEY, SUPABASE_URL } from './config';
+import { fillMissingImages } from './image';
+import { sortWithBreakingPinned } from './breaking';
 import { filterDisplayableArticles } from './quality';
 import { cleanSummaryText } from './text';
 import type { Article, ArticleRow } from './types';
@@ -42,9 +44,11 @@ export async function getFeedArticles(limit: number = FEED_LIMIT): Promise<Artic
 
   const rows = (data ?? []) as ArticleRow[];
 
-  return filterDisplayableArticles(rows.filter(isComplete))
+  const articles = filterDisplayableArticles(rows.filter(isComplete))
     .slice(0, limit)
     .map(toArticle);
+
+  return sortWithBreakingPinned(await fillMissingImages(articles));
 }
 
 export async function getArticleById(id: string): Promise<Article | null> {
@@ -54,5 +58,8 @@ export async function getArticleById(id: string): Promise<Article | null> {
     throw new Error(`Failed to load article ${id}: ${error.message}`);
   }
 
-  return data ? toArticle(data as ArticleRow) : null;
+  if (!data) return null;
+
+  const [article] = await fillMissingImages([toArticle(data as ArticleRow)]);
+  return article;
 }

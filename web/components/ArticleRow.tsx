@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { CategoryTag } from './CategoryTag';
+import { BreakingBadge } from './BreakingBadge';
 import { AiSparkle } from './AiSparkle';
 import { ArticleThumb } from './ArticleThumb';
 import { getArticleCategory } from '@/lib/category';
@@ -17,7 +18,10 @@ export function ArticleRow({ article }: { article: Article }) {
   return (
     <article className="group relative flex gap-3.5 py-4">
       <div className="flex-1">
-        <CategoryTag category={category} />
+        <div className="flex flex-wrap items-center gap-1.5">
+          {article.is_breaking && <BreakingBadge category={article.breaking_category} />}
+          <CategoryTag category={category} />
+        </div>
 
         <h3 className="mt-1.5 text-[15px] font-semibold leading-snug tracking-[-0.01em]">
           <Link href={`/article/${article.id}`} className="after:absolute after:inset-0">

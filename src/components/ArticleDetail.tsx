@@ -23,6 +23,7 @@ import { RootStackParamList } from '../types';
 import { AdBanner } from './AdBanner';
 import { ExpandableSummary } from './ExpandableSummary';
 import { ArticleImage } from './ArticleImage';
+import { BreakingBadge } from './BreakingBadge';
 import { directSupabaseService, DirectArticle } from '../services/directSupabaseService';
 
 type ArticleDetailRouteProp = RouteProp<RootStackParamList, 'ArticleDetail'>;
@@ -178,6 +179,9 @@ export function ArticleDetail() {
     image: {
       width: '100%',
       height: '100%',
+    },
+    breakingBadge: {
+      marginBottom: SPACING.sm,
     },
     title: {
       ...TYPOGRAPHY.h2,
@@ -452,15 +456,18 @@ export function ArticleDetail() {
       </View>
 
       <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Only render image if imageUrl exists and is valid */}
-        {article.imageUrl && article.imageUrl.trim() !== '' && (
-          <ArticleImage
-            imageUrl={article.imageUrl}
-            containerStyle={styles.imageBox}
-            style={styles.image}
-            resizeMode="cover"
-            showPlaceholder={false}
-          />
+        <ArticleImage
+          imageUrl={article.imageUrl}
+          containerStyle={styles.imageBox}
+          style={styles.image}
+          resizeMode="cover"
+          showPlaceholder
+          showPlaceholderText={false}
+          placeholderIconSize={32}
+        />
+
+        {article.isBreaking && (
+          <BreakingBadge category={article.breakingCategory} style={styles.breakingBadge} />
         )}
 
         <Text style={styles.title}>{formatTextForDisplay(article.title)}</Text>
