@@ -57,9 +57,16 @@ the project, and app favourites are device-local in AsyncStorage.
 
 ## Ads
 
-`public/ads.txt` declares the AdSense publisher, and the loader is a plain async
-`<script>` in the root layout, which React hoists into `<head>` of the
-server-rendered HTML. Ads will not serve until Google approves the site.
+Websites cannot host AdMob units. The site uses **Google AdSense** on the same
+publisher account as the mobile AdMob app (`pub-1846982089045102`).
 
-In-feed units have no `data-ad-slot` yet; create them in the AdSense dashboard
-and pass the ids to `<AdSlot slot="..." />`.
+- `public/ads.txt` and `public/app-ads.txt` declare the seller.
+- The AdSense loader is a plain async `<script>` in the root layout, plus a
+  `google-adsense-account` meta tag for site verification.
+- Auto ads (page-level placements) are enabled in `AutoAds`. Ads start serving
+  once the site is approved in AdSense and Auto ads are turned on for
+  cybersimply.com.
+- Optional in-feed / article units: create them in AdSense → Ads → By ad unit,
+  then set `NEXT_PUBLIC_ADSENSE_SLOT_INFEED` and `NEXT_PUBLIC_ADSENSE_SLOT_ARTICLE`
+  on the Vercel project. `<AdSlot slot="..." />` stays collapsed until those
+  ids exist so empty boxes never sit in the feed.

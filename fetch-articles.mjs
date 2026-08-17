@@ -157,6 +157,35 @@ const baseRecordFrom = (article) => {
   };
 };
 
+const IMAGE_FETCH_TIMEOUT_MS = 8_000;
+const IMAGE_USER_AGENT =
+  'Mozilla/5.0 (compatible; CyberSimplyBot/1.0; +https://cybersimply.app)';
+
+async function fetchOgImage(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      headers: { 'User-Agent': IMAGE_USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    const html = await response.text();
+    const match =
+      html.match(/property=["']og:image(?::secure_url)?["'][^>]*content=["']([^"']+)/i) ||
+      html.match(/content=["']([^"']+)["'][^>]*property=["']og:image(?::secure_url)?["']/i) ||
+      html.match(/name=["']twitter:image(?::src)?["'][^>]*content=["']([^"']+)/i) ||
+      html.match(/content=["']([^"']+)["'][^>]*name=["']twitter:image(?::src)?["']/i);
+    if (!match) return null;
+    return cleanUrl(match[1].replace(/&amp;/gi, '&').trim());
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // --- Fetch from NewsAPI ---
 async function fetchNewsAPIArticles() {
   try {
@@ -250,6 +279,14 @@ async function storeArticles(articles) {
       continue;
     }
 
+    if (!article.image_url) {
+      const ogImage = await fetchOgImage(article.source_url);
+      if (ogImage) {
+        article.image_url = ogImage;
+        console.log(`   🖼️ Recovered og:image for "${article.title.substring(0, 60)}"`);
+      }
+    }
+
     try {
       console.log(`→ [${i + 1}/${articles.length}] Inserting:`, {
         title: article.title.substring(0, 60) + (article.title.length > 60 ? '...' : ''),
@@ -274,6 +311,19 @@ async function storeArticles(articles) {
       } else {
         duplicateCount++;
         console.log(`   ↪️ Already present, no row written`);
+        if (article.image_url) {
+          const { data: filled, error: fillError } = await supabase
+            .from('articles')
+            .update({ image_url: article.image_url })
+            .eq('source_url', article.source_url)
+            .is('image_url', null)
+            .select('id');
+          if (fillError) {
+            console.warn(`   ⚠️ Could not fill missing image: ${fillError.message}`);
+          } else if (filled?.length) {
+            console.log(`   🖼️ Filled missing image on existing row`);
+          }
+        }
       }
     } catch (err) {
       console.error(`   ❌ Error processing article: ${err.message}`);

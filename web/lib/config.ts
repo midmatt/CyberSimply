@@ -15,8 +15,21 @@ export const SUPABASE_ANON_KEY =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVheWtyeGZoemZraGp3bm12dWtiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc1MjI1ODMsImV4cCI6MjA3MzA5ODU4M30.V4cd5JiLwAgjNUk-VTBicIp52PuH2FAp_UsZMRPlR40';
 
-/** Google AdSense publisher id, shared with the AdMob account. */
+/**
+ * Google AdSense publisher id — same account as AdMob on iOS/Android.
+ * Websites cannot host AdMob units; AdSense is the web product for this pub.
+ */
 export const ADSENSE_CLIENT = 'ca-pub-1846982089045102';
+
+/**
+ * Optional manual AdSense unit ids. Auto ads still run without these; set the
+ * env vars after creating units in AdSense → Ads → By ad unit.
+ */
+export const ADSENSE_SLOTS = {
+  inFeed: process.env.NEXT_PUBLIC_ADSENSE_SLOT_INFEED || '',
+  article: process.env.NEXT_PUBLIC_ADSENSE_SLOT_ARTICLE || '',
+  display: process.env.NEXT_PUBLIC_ADSENSE_SLOT_DISPLAY || '',
+};
 
 /**
  * How many recent articles the site builds. The table holds thousands, but the

@@ -15,9 +15,13 @@ export interface ArticleRow {
   takeaways: string | null;
   why_this_matters: string | null;
   redirect_url: string | null;
+  source_url?: string | null;
   image_url: string | null;
   category: string | null;
   ai_summary_generated: boolean | null;
+  is_breaking?: boolean | null;
+  breaking_category?: string | null;
+  breaking_tagged_at?: string | null;
 }
 
 /** An article after cleaning, ready to render. */

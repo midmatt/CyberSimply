@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/components/AuthProvider';
+import { AutoAds } from '@/components/AutoAds';
 import { SiteHeader } from '@/components/SiteHeader';
 import { SiteFooter } from '@/components/SiteFooter';
 import { ADSENSE_CLIENT, SITE_DESCRIPTION, SITE_NAME, SITE_URL } from '@/lib/config';
@@ -12,6 +13,9 @@ export const metadata: Metadata = {
     template: `%s — ${SITE_NAME}`,
   },
   description: SITE_DESCRIPTION,
+  other: {
+    'google-adsense-account': ADSENSE_CLIENT,
+  },
   openGraph: {
     type: 'website',
     siteName: SITE_NAME,
@@ -39,6 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <SiteHeader />
           <main>{children}</main>
           <SiteFooter />
+          <AutoAds />
         </AuthProvider>
 
         {/*

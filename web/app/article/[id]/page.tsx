@@ -3,10 +3,12 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArticleThumb } from '@/components/ArticleThumb';
 import { CategoryTag } from '@/components/CategoryTag';
+import { BreakingBadge } from '@/components/BreakingBadge';
 import { AiSparkle } from '@/components/AiSparkle';
 import { AdSlot } from '@/components/AdSlot';
 import { getArticleById, getFeedArticles } from '@/lib/articles';
 import { getArticleCategory } from '@/lib/category';
+import { ADSENSE_SLOTS } from '@/lib/config';
 import { fullDate } from '@/lib/date';
 import { formatSource, parseBullets } from '@/lib/text';
 
@@ -73,7 +75,10 @@ export default async function ArticlePage({ params }: { params: Promise<{ id: st
       </Link>
 
       <header className="mb-6">
-        <CategoryTag category={category} />
+        <div className="flex flex-wrap items-center gap-1.5">
+          {article.is_breaking && <BreakingBadge category={article.breaking_category} />}
+          <CategoryTag category={category} />
+        </div>
 
         <h1 className="mt-3 text-balance text-3xl font-bold leading-[1.15] tracking-[-0.025em] sm:text-[42px]">
           {article.title}
@@ -141,7 +146,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ id: st
         </div>
       )}
 
-      <AdSlot className="my-10" />
+      <AdSlot slot={ADSENSE_SLOTS.article || ADSENSE_SLOTS.display} className="my-10" />
 
       {article.redirect_url && (
         <a
